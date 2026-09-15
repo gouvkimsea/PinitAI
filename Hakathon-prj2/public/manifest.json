@@ -1,0 +1,28 @@
+{
+  "short_name": "ScamCheck AI",
+  "name": "ScamCheck AI — Scam, Link & Threat Detector",
+  "description": "Analyze suspicious messages, links, QR codes, and files across English and Khmer before clicking or sending money.",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "/icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    },
+    {
+      "src": "/logo.png",
+      "type": "image/png",
+      "sizes": "1024x357"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "display": "standalone",
+  "orientation": "portrait",
+  "lang": "en"
+}

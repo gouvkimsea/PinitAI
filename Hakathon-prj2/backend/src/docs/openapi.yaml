@@ -1,0 +1,704 @@
+openapi: 3.0.3
+info:
+  title: PinIt Security & Antivirus Detection API
+  description: |
+    Enterprise-grade security analysis API for scanning uploaded files and URLs for malware,
+    viruses, phishing, macros, obfuscated scripts, and suspicious behavior.
+  version: 1.0.0
+  contact:
+    name: Security Engineering Team
+    url: https://pinit.security
+
+servers:
+  - url: http://localhost:5000/api/v1
+    description: Local Development Server
+
+paths:
+  /analyze:
+    post:
+      summary: Create asynchronous analysis job (File, URL, Text, AI)
+      description: |
+        Canonical asynchronous analysis endpoint implementing the decoupled architecture:
+        POST /analyze → Create analysis job → Return job_id → Queue → Worker → Detection → AI → Database → Completed result.
+        Supports multipart/form-data for file uploads and application/json for text, url, and ai jobs.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                content:
+                  type: string
+                  description: Text or message content to inspect.
+                  example: "Urgent: verify your account now."
+                url:
+                  type: string
+                  description: Target URL for reputation and security checks.
+                  example: "https://suspicious-login.xyz"
+                type:
+                  type: string
+                  enum: [TEXT, URL, FILE, AI, EXPLAIN]
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: Target file to analyze asynchronously.
+      responses:
+        '202':
+          description: Job created and queued for asynchronous processing.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  job_id:
+                    type: string
+                    format: uuid
+                    example: "c79435fd-54c2-4cb6-ab8c-0f9c2d1b72e1"
+                  status:
+                    type: string
+                    enum: [QUEUED, PROCESSING, COMPLETED, FAILED]
+                    example: "QUEUED"
+                  check_status_url:
+                    type: string
+                    example: "/api/analysis/c79435fd-54c2-4cb6-ab8c-0f9c2d1b72e1"
+
+  /analysis/{job_id}:
+    get:
+      summary: Poll analysis job status and retrieve completed result
+      description: |
+        Frontend polling endpoint to check progress of an asynchronous analysis job.
+        Returns status 'QUEUED', 'PROCESSING', 'COMPLETED', or 'FAILED'.
+        When 'COMPLETED', includes full risk score, threat level, detected indicators, AI explanations, and recommended actions.
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Job status or completed analysis result.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  job_id:
+                    type: string
+                    format: uuid
+                  status:
+                    type: string
+                    enum: [QUEUED, PROCESSING, COMPLETED, FAILED]
+                  threat_level:
+                    type: string
+                  risk_score:
+                    type: number
+                  detected_indicators:
+                    type: array
+                    items:
+                      type: string
+                  recommended_action:
+                    type: string
+                  explanation:
+                    type: object
+        '404':
+          description: Job not found.
+
+  /files/scan:
+    post:
+      summary: Upload and scan a file
+      description: Accepts a file, calculates cryptographic hashes, analyzes magic bytes, performs static analysis, scans with ClamAV, and enqueues for full assessment.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: Target file to analyze (Max 25MB).
+      responses:
+        '202':
+          description: File accepted and queued for scanning.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScanSubmissionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '413':
+          $ref: '#/components/responses/FileTooLarge'
+
+  /analyze/file:
+    post:
+      summary: Upload and securely analyze file
+      description: Safely inspects files in quarantine storage with static multi-engine analysis (never executes code). Supports synchronous analysis (?sync=true) returning file_type, file_size, detected_indicators, risk_score, classification, evidence, and recommended_action.
+      parameters:
+        - in: query
+          name: sync
+          schema:
+            type: boolean
+          description: When true, executes analysis synchronously and returns completed results immediately.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Synchronous analysis result with exact 7 security fields.
+        '202':
+          description: Queued analysis response.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '413':
+          $ref: '#/components/responses/FileTooLarge'
+
+  /files/analyze:
+    post:
+      summary: Direct sandboxed static file analysis
+      description: Evaluates uploaded file in quarantine storage without execution, returning immediate security report.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Security analysis results.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '413':
+          $ref: '#/components/responses/FileTooLarge'
+
+  /files/scan/{id}:
+    get:
+      summary: Get file scan status and report
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Scan progress or completed threat analysis.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileScanResult'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /urls/scan:
+    post:
+      summary: Submit a URL for analysis
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - url
+              properties:
+                url:
+                  type: string
+                  example: https://example-login-verify.xyz
+      responses:
+        '202':
+          description: URL accepted and queued.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScanSubmissionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /urls/scan/{id}:
+    get:
+      summary: Get URL scan report
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Detailed URL threat analysis.
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /scans:
+    get:
+      summary: List historical scans with pagination and filters
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [FILE, URL]
+        - name: riskLevel
+          in: query
+          schema:
+            type: string
+            enum: [SAFE, LOW_RISK, SUSPICIOUS, HIGH_RISK, MALICIOUS, UNKNOWN]
+      responses:
+        '200':
+          description: Paginated scan list.
+
+  /scans/{id}:
+    get:
+      summary: Unified scan lookup
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Unified scan details.
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      summary: Delete scan record
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Scan deleted.
+
+  /health:
+    get:
+      summary: Service health and dependency probe
+      description: Returns overall platform status, memory usage, uptime, and high-level health state.
+      responses:
+        '200':
+          description: System healthy.
+        '503':
+          description: Service degraded.
+
+  /health/database:
+    get:
+      summary: Database health check
+      description: Validates database connectivity, queries live data, and reports round-trip query latency in ms.
+      responses:
+        '200':
+          description: Database connected and responsive.
+        '503':
+          description: Database disconnected or query failure.
+
+  /health/services:
+    get:
+      summary: Backend subsystems and services health check
+      description: Comprehensive health probe reporting statuses of database, ClamAV antivirus daemon, queue workers, AI explanation engine, and quarantine file storage.
+      responses:
+        '200':
+          description: Subsystems operating normally.
+        '503':
+          description: Critical subsystem unavailable.
+
+  /statistics:
+    get:
+      summary: Global threat and scanner statistics
+      responses:
+        '200':
+          description: Global metrics.
+
+  /auth/register:
+    post:
+      summary: Register a new account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  minLength: 8
+      responses:
+        '210':
+          description: User registered.
+
+  /auth/login:
+    post:
+      summary: User login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                password:
+                  type: string
+      responses:
+        '200':
+          description: Authenticated.
+
+  /auth/me:
+    get:
+      summary: Get current authenticated user profile
+      security:
+        - BearerAuth: []
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Profile retrieved.
+
+  /auth/api-key/regenerate:
+    post:
+      summary: Rotate or regenerate API key
+      description: Generates a new API key and updates the SHA-256 hash. Displays the plaintext key once.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: New API key generated successfully.
+
+  /reports:
+    post:
+      summary: Submit a community scam or malicious threat report
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - scamType
+                - description
+              properties:
+                scamType:
+                  type: string
+                  example: phishing
+                target:
+                  type: string
+                  example: https://fake-bank-portal.xyz
+                description:
+                  type: string
+                  example: Received suspicious SMS prompting user for login credentials
+      responses:
+        '201':
+          description: Report recorded and queued for threat review.
+    get:
+      summary: List scam reports (Admin only)
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: List of submitted threat reports.
+        '403':
+          description: Forbidden for non-admin accounts.
+
+  /intelligence/categories:
+    get:
+      summary: List supported scam categories
+      description: Returns the official list of 10 supported scam categories (Phishing, Fake investment, Fake job, Romance scam, Payment scam, Account takeover, Impersonation, Lottery scam, Cryptocurrency scam, Tech-support scam).
+      responses:
+        '200':
+          description: Successfully retrieved categories.
+
+  /intelligence/compare:
+    post:
+      summary: Compare submitted content against known scam patterns
+      description: Evaluates text content against the live scam intelligence database, returning matched patterns, severity, confidence, and recommended safety actions.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - content
+              properties:
+                content:
+                  type: string
+                  example: 'Congratulations! You won $5000 in lucky draw. Pay clearance fee to claim.'
+                categories:
+                  type: array
+                  items:
+                    type: string
+                min_severity:
+                  type: string
+                  enum: [low, medium, high, critical]
+      responses:
+        '200':
+          description: Comparison and threat evaluation result.
+
+  /intelligence/patterns:
+    get:
+      summary: List scam patterns with filtering
+      parameters:
+        - in: query
+          name: category
+          schema:
+            type: string
+        - in: query
+          name: severity
+          schema:
+            type: string
+            enum: [low, medium, high, critical]
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [active, inactive, pending_review, deprecated]
+        - in: query
+          name: search
+          schema:
+            type: string
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 50
+        - in: query
+          name: offset
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: Filtered list of scam patterns.
+    post:
+      summary: Register a new scam pattern (Admin only)
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - pattern
+                - category
+                - severity
+                - description
+                - source
+              properties:
+                pattern:
+                  type: string
+                category:
+                  type: string
+                severity:
+                  type: string
+                  enum: [low, medium, high, critical]
+                description:
+                  type: string
+                source:
+                  type: string
+                status:
+                  type: string
+                  enum: [active, inactive, pending_review, deprecated]
+      responses:
+        '201':
+          description: Pattern created and hot-reloaded into active detection.
+
+  /intelligence/patterns/{id}:
+    get:
+      summary: Get scam pattern by ID
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Pattern details.
+        '404':
+          description: Pattern not found.
+    put:
+      summary: Update scam pattern (Admin only)
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                pattern:
+                  type: string
+                category:
+                  type: string
+                severity:
+                  type: string
+                  enum: [low, medium, high, critical]
+                description:
+                  type: string
+                source:
+                  type: string
+                status:
+                  type: string
+      responses:
+        '200':
+          description: Pattern updated.
+    delete:
+      summary: Delete scam pattern (Admin only)
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Pattern deleted.
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+
+  schemas:
+    ScanSubmissionResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        scan_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          example: QUEUED
+        message:
+          type: string
+        check_status_url:
+          type: string
+
+    FileScanResult:
+      type: object
+      properties:
+        success:
+          type: boolean
+        scan_id:
+          type: string
+        status:
+          type: string
+          enum: [QUEUED, PROCESSING, COMPLETED, FAILED]
+        threat_level:
+          type: string
+          enum: [SAFE, LOW_RISK, SUSPICIOUS, HIGH_RISK, MALICIOUS, UNKNOWN]
+        risk_score:
+          type: integer
+          minimum: 0
+          maximum: 100
+        malicious:
+          type: boolean
+        file_details:
+          type: object
+          properties:
+            original_name:
+              type: string
+            size_bytes:
+              type: integer
+            hashes:
+              type: object
+              properties:
+                sha256:
+                  type: string
+                sha1:
+                  type: string
+                md5:
+                  type: string
+        detections:
+          type: array
+          items:
+            type: object
+            properties:
+              engine:
+                type: string
+              severity:
+                type: string
+              title:
+                type: string
+              description:
+                type: string
+
+  responses:
+    BadRequest:
+      description: Invalid request parameters or payload.
+    NotFound:
+      description: Requested scan resource not found.
+    FileTooLarge:
+      description: Uploaded file exceeds size limit.

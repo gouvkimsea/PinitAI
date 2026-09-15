@@ -1,0 +1,376 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// 1. Users Domain
+// ────────────────────────────────────────────────────────────────────────────
+model User {
+  id             String          @id @default(uuid())
+  email          String          @unique
+  passwordHash   String
+  role           String          @default("user") // "user" | "admin" | "analyst"
+  status         String          @default("active") // "active" | "suspended" | "pending_verification"
+  apiKeyHash     String?         @unique
+  lastLoginAt    DateTime?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  scans          Scan[]
+  reports        ScamReport[]
+  feedbacks      AnalysisFeedback[]
+  apiUsages      ApiUsage[]
+  securityEvents SecurityEvent[]
+
+  @@index([role])
+  @@index([status])
+  @@index([createdAt])
+  @@map("users")
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// 2. Analyses Domain
+// ────────────────────────────────────────────────────────────────────────────
+model Scan {
+  id               String            @id @default(uuid())
+  userId           String?
+  type             String            // "FILE" | "URL" | "MESSAGE" | "QR"
+  target           String            // Sanitized preview or descriptor (never unbounded raw PII)
+  targetHash       String?           // SHA-256 for fast duplicate / threat lookup
+  status           String            @default("QUEUED") // "QUEUED" | "PROCESSING" | "COMPLETED" | "FAILED"
+  riskLevel        String            @default("UNKNOWN") // "SAFE" | "LOW_RISK" | "SUSPICIOUS" | "HIGH_RISK" | "MALICIOUS" | "UNKNOWN"
+  riskScore        Int               @default(0) // 0 to 100
+  threatConfidence String            @default("LOW") // "LOW" | "MEDIUM" | "HIGH"
+  threatCategory   String?           // e.g. "phishing", "malware", "impersonation"
+  errorMessage     String?
+  scanDurationMs   Int?
+  createdAt        DateTime          @default(now())
+  completedAt      DateTime?
+
+  user             User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
+  fileRecord       FileRecord?
+  urlScan          UrlScan?
+  scanResult       ScanResult?
+  evidenceRecord   AnalysisEvidence?
+  detections       Detection[]
+
+  @@index([status])
+  @@index([riskLevel])
+  @@index([type])
+  @@index([targetHash])
+  @@index([targetHash, status, createdAt])
+  @@index([status, createdAt])
+  @@index([type, createdAt])
+  @@index([userId, createdAt])
+  @@index([createdAt])
+  @@map("scans")
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// 3. File & URL Target Modalities
+// ────────────────────────────────────────────────────────────────────────────
+model FileRecord {
+  id               String     @id @default(uuid())
+  scanId           String     @unique
+  originalName     String     // Sanitized original filename
+  sanitizedName    String
+  mimeType         String
+  detectedMimeType String?
+  sizeBytes        Int
+  extension        String
+  createdAt        DateTime   @default(now())
+
+  scan             Scan       @relation(fields: [scanId], references: [id], onDelete: Cascade)
+  hashes           FileHash?
+
+  @@index([extension])
+  @@index([sizeBytes])
+  @@map("files")
+}
+
+model FileHash {
+  id        String     @id @default(uuid())
+  fileId    String     @unique
+  sha256    String
+  sha1      String
+  md5       String
+  createdAt DateTime   @default(now())
+
+  file      FileRecord @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  @@index([sha256])
+  @@index([md5])
+  @@map("file_hashes")
+}
+
+model UrlScan {
+  id            String    @id @default(uuid())
+  scanId        String    @unique
+  url           String
+  normalizedUrl String
+  domain        String
+  ipAddress     String?
+  isHttps       Boolean   @default(false)
+  hasRedirects  Boolean   @default(false)
+  redirectCount Int       @default(0)
+  domainAgeDays Int?
+  createdAt     DateTime  @default(now())
+
+  scan          Scan      @relation(fields: [scanId], references: [id], onDelete: Cascade)
+
+  @@index([domain])
+  @@index([isHttps])
+  @@map("url_scans")
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// 4. Detection Results Domain
+// ────────────────────────────────────────────────────────────────────────────
+model Detection {
+  id             String        @id @default(uuid())
+  scanId         String
+  modelVersionId String?
+  engine         String        // "ClamAV" | "StaticAnalyzer" | "MagicBytes" | "URLHeuristics" | "VirusTotal" | "TextLinguistic"
+  category       String        // "malware" | "phishing" | "macro" | "script" | "anomaly" | "impersonation"
+  severity       String        // "low" | "medium" | "high" | "critical"
+  ruleId         String
+  title          String
+  description    String
+  score          Int           @default(0) // Individual detector confidence score (0 - 100)
+  confidence     Int           @default(50) // Detection confidence (0 - 100)
+  executionMs    Int?          // Engine execution latency in milliseconds
+  details        String?       // Structured JSON payload
+  createdAt      DateTime      @default(now())
+
+  scan           Scan          @relation(fields: [scanId], references: [id], onDelete: Cascade)
+  modelVersion   ModelVersion? @relation(fields: [modelVersionId], references: [id], onDelete: SetNull)
+
+  @@index([scanId])
+  @@index([scanId, severity])
+  @@index([engine])
+  @@index([category])
+  @@index([severity])
+  @@index([modelVersionId])
+  @@map("detections")
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// 5. Evidence Domain
+// ────────────────────────────────────────────────────────────────────────────
+model ScanResult {
+  id                 String   @id @default(uuid())
+  scanId             String   @unique
+  summary            String
+  totalEngines       Int      @default(0)
+  maliciousEngines   Int      @default(0)
+  suspiciousEngines  Int      @default(0)
+  cleanEngines       Int      @default(0)
+  safeFactors        String   @default("[]") // JSON string array
+  recommendations    String   @default("[]") // JSON string array
+  createdAt          DateTime @default(now())
+
+  scan               Scan     @relation(fields: [scanId], references: [id], onDelete: Cascade)
+
+  @@map("scan_results")
+}
+
+model AnalysisEvidence {
+  id                 String   @id @default(uuid())
+  scanId             String   @unique
+  summary            String
+  indicators         String   @default("[]") // JSON array of extracted indicators
+  evidenceBreakdown  String   @default("{}") // JSON map of category weights
+  technicalEvidence  String   @default("{}") // JSON forensic details (no raw PII)
+  uncertaintyNotes   String?  // Explanation of remaining ambiguity/uncertainty
+  groundedScore      Int      @default(100) // Grounding confidence score (0 - 100)
+  createdAt          DateTime @default(now())
+
+  scan               Scan     @relation(fields: [scanId], references: [id], onDelete: Cascade)
+
+  @@map("analysis_evidence")
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// 6. Scam Patterns Domain
+// ────────────────────────────────────────────────────────────────────────────
+model ScamPattern {
+  id          String   @id @default(uuid())
+  pattern     String
+  category    String   // "phishing" | "fake_investment" | "fake_job" | "romance_scam" | etc.
+  severity    String   // "low" | "medium" | "high" | "critical"
+  description String
+  source      String   // "community_report" | "cert" | "threat_intel" | "internal_research"
+  status      String   @default("active") // "active" | "inactive" | "pending_review" | "deprecated"
+  matchCount  Int      @default(0) // Total hits across scans
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([category])
+  @@index([status])
+  @@index([severity])
+  @@map("scam_patterns")
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// 7. Reports Domain (Community Threat Reports)
+// ────────────────────────────────────────────────────────────────────────────
+model ScamReport {
+  id          String   @id @default(uuid())
+  userId      String?
+  scamType    String   // "phishing" | "impersonation" | "financial" | "job" | "malware" | "other"
+  target      String?  // phone, url, or sender (sanitized)
+  targetHash  String?  // SHA-256 for deduplication
+  description String
+  status      String   @default("PENDING") // "PENDING" | "REVIEWED" | "CONFIRMED" | "DISMISSED"
+  reviewedBy  String?  // Admin/analyst ID
+  reviewNotes String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([scamType])
+  @@index([status])
+  @@index([targetHash])
+  @@index([createdAt])
+  @@map("scam_reports")
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// 8. Feedback Domain (Accuracy & User Validation)
+// ────────────────────────────────────────────────────────────────────────────
+model AnalysisFeedback {
+  id               String   @id @default(uuid())
+  analysisId       String
+  userId           String?  // Optional: Authenticated user
+  ipHash           String?  // Salted SHA-256 hash — never store raw IP
+  feedbackType     String   // "correct_detection" | "incorrect_detection" | "report_scam" | "not_sure"
+  reportedCategory String?  // User-suggested category
+  explanation      String?  // User comments (sanitized length)
+  targetSnippet    String?  // First 80 chars preview
+  riskScoreAtTime  Int?     // Score at time of feedback submission
+  isReviewed       Boolean  @default(false)
+  reviewedBy       String?
+  reviewNote       String?
+  createdAt        DateTime @default(now())
+
+  user             User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([analysisId])
+  @@index([feedbackType])
+  @@index([userId])
+  @@index([ipHash])
+  @@index([isReviewed])
+  @@index([createdAt])
+  @@map("analysis_feedback")
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// 9. Model Versions Domain (AI/ML & Detector Registry)
+// ────────────────────────────────────────────────────────────────────────────
+model ModelVersion {
+  id           String      @id @default(uuid())
+  name         String      // e.g. "gemini-grounded-explainer", "clamav-rules", "khmer-heuristic-v2"
+  version      String      // SemVer string, e.g. "2.1.0"
+  modelType    String      // "heuristic" | "llm_explanation" | "classifier" | "antivirus" | "regex"
+  provider     String      // "Internal" | "GoogleGemini" | "ClamAV" | "VirusTotal"
+  isActive     Boolean     @default(true)
+  capabilities String      @default("[]") // JSON array of supported modalities: ["TEXT", "URL"]
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  detections   Detection[]
+
+  @@unique([name, version])
+  @@index([modelType, isActive])
+  @@index([provider])
+  @@map("model_versions")
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// 10. API Usage Domain (Quotas & Telemetry)
+// ────────────────────────────────────────────────────────────────────────────
+model ApiUsage {
+  id             String   @id @default(uuid())
+  userId         String?
+  apiKeyHash     String?
+  endpoint       String
+  method         String
+  statusCode     Int
+  durationMs     Int
+  requestCount   Int      @default(1)
+  clientIpHash   String?  // SHA-256 hash of client IP
+  createdAt      DateTime @default(now())
+
+  user           User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([apiKeyHash, createdAt])
+  @@index([userId, createdAt])
+  @@index([endpoint, createdAt])
+  @@index([statusCode])
+  @@index([createdAt])
+  @@map("api_usage")
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// 11. Security Events Domain (Audit Log & Incident Response)
+// ────────────────────────────────────────────────────────────────────────────
+model SecurityEvent {
+  id             String   @id @default(uuid())
+  userId         String?
+  eventType      String   // "AUTH_FAILURE" | "RATE_LIMIT_EXCEEDED" | "MALICIOUS_UPLOAD" | "SSRF_ATTEMPT" | "API_KEY_REVOKED"
+  severity       String   // "INFO" | "WARNING" | "HIGH" | "CRITICAL"
+  ipHash         String?  // Salted SHA-256 hash of origin IP
+  targetResource String?  // Endpoint, file hash, or user identifier
+  details        String?  // JSON string containing contextual evidence
+  createdAt      DateTime @default(now())
+
+  user           User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([eventType, createdAt])
+  @@index([severity, createdAt])
+  @@index([ipHash, createdAt])
+  @@index([userId, createdAt])
+  @@map("security_events")
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// 12. Threat Intelligence Cache & Legacy API Logs
+// ────────────────────────────────────────────────────────────────────────────
+model ThreatIntelligence {
+  id              String   @id @default(uuid())
+  targetType      String   // "HASH" | "DOMAIN" | "IP"
+  targetValue     String
+  provider        String   // "VirusTotal" | "InternalRule"
+  reputationScore Int      @default(0)
+  threatCategory  String?
+  rawData         String?  // JSON string
+  expiresAt       DateTime
+  createdAt       DateTime @default(now())
+
+  @@index([targetType, targetValue])
+  @@index([targetType, targetValue, expiresAt])
+  @@index([expiresAt])
+  @@map("threat_intelligence")
+}
+
+model ApiLog {
+  id         String   @id @default(uuid())
+  endpoint   String
+  method     String
+  statusCode Int
+  ipAddress  String?  // Legacy log table maintained for backward compatibility
+  userAgent  String?
+  durationMs Int
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([endpoint, createdAt])
+  @@index([statusCode, createdAt])
+  @@map("api_logs")
+}
