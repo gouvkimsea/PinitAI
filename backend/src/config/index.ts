@@ -53,7 +53,9 @@ export const config = {
   virusTotalApiKey: process.env.VIRUSTOTAL_API_KEY || '',
 
   // AI Engine
-  aiEngineUrl: process.env.AI_ENGINE_URL || 'http://127.0.0.1:8000',
+  aiEngineUrl: process.env.AI_ENGINE_URL
+    ? (process.env.AI_ENGINE_URL.startsWith('http') ? process.env.AI_ENGINE_URL : `http://${process.env.AI_ENGINE_URL}`)
+    : 'http://127.0.0.1:8000',
   adminApiKey: process.env.ADMIN_API_KEY || '',
 
   // Gemini LLM — Explanation Layer
