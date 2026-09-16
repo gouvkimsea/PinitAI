@@ -36,7 +36,7 @@ ScamCheck AI operates on a modern, decoupled microservice architecture:
 ├──────────────────────────────┤ ├───────────────────────────┤
 │ • JWT & API-Key Auth (SHA256)│ │ • Message Context Analyzer│
 │ • Rate Limiting & Audit Logs │ │ • Unicode Language Detector│
-│ • Prisma ORM & MySQL / SQLite│ │ • Deep Technical URL Parser│
+│ • Prisma ORM & PostgreSQL 16 │ │ • Deep Technical URL Parser│
 │ • Async Job Queuing (BullMQ) │ │ • OpenCV QR Code Decoder  │
 │ • Community Scam Reports     │ │ • Static Binary / PE / PDF│
 │ • Scan History Repository    │ │ • Model Benchmark & Eval  │
@@ -215,7 +215,7 @@ docker compose ps
 
 - **Frontend Application**: `http://localhost` (Port 80)
 - **API Documentation**: `http://localhost/api/docs` (Swagger UI via reverse proxy)
-- **Health Check**: `http://localhost/api/health`
+- **Health Probes**: `http://localhost/api/v1/health` (Backend & Database), `http://localhost:8000/health` (AI Engine)
 
 ---
 
