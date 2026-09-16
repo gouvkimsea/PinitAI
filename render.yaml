@@ -1,0 +1,64 @@
+services:
+  # 1. Express REST API Gateway
+  - type: web
+    name: pinit-backend-api
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: free
+    region: oregon
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 4000
+      - key: CORS_ORIGIN
+        value: "*"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: pinit-postgres
+          property: connectionString
+      - key: AI_ENGINE_URL
+        fromService:
+          type: web
+          name: pinit-ai-engine
+          property: host
+      - key: ADMIN_API_KEY
+        generateValue: true
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 7d
+      - key: DATA_RETENTION_DAYS
+        value: "90"
+      - key: CLAMAV_HOST
+        value: "localhost"
+      - key: CLAMAV_PORT
+        value: "3310"
+
+  # 2. Python FastAPI AI Engine
+  - type: web
+    name: pinit-ai-engine
+    runtime: docker
+    dockerfilePath: ./ai_engine/Dockerfile
+    dockerContext: .
+    plan: free
+    region: oregon
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: ADMIN_API_KEY
+        fromService:
+          type: web
+          name: pinit-backend-api
+          envVarKey: ADMIN_API_KEY
+
+databases:
+  # 3. PostgreSQL Database
+  - name: pinit-postgres
+    plan: free
+    region: oregon
+    databaseName: scamcheck_db
+    user: scamcheck
