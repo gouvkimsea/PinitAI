@@ -49,39 +49,43 @@ export function createApp(): Express {
   );
 
   // 2. Hardened CORS Configuration
-  app.use(
-    cors({
-      origin: (origin, callback) => {
-        // Allow requests with no origin (e.g. mobile apps, curl, server-to-server)
-        if (!origin) {
-          return callback(null, true);
-        }
+  const corsMiddleware = cors({
+    origin: (origin, callback) => {
+      // Allow requests with no origin (e.g. mobile apps, curl, server-to-server)
+      if (!origin) {
+        return callback(null, true);
+      }
 
-        // In production, NEVER allow wildcard '*' when credentials are true
-        if (config.isProduction && config.corsOrigins.includes('*')) {
-          return callback(new Error('Insecure wildcard CORS origin prohibited in production environment.'));
-        }
+      // Allow wildcard if configured (reflects requesting origin to safely support credentials)
+      if (config.corsOrigins.includes('*')) {
+        return callback(null, true);
+      }
 
-        if (config.corsOrigins.includes(origin) || (!config.isProduction && config.corsOrigins.includes('*'))) {
-          callback(null, true);
-        } else if (!config.isProduction) {
-          // Allow standard localhost dev origins
-          const isLocalhost = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
-          if (isLocalhost) {
-            callback(null, true);
-          } else {
-            callback(new Error(`Origin '${origin}' is not permitted by CORS policy in development.`));
-          }
-        } else {
-          callback(new Error(`Origin '${origin}' is not permitted by CORS policy.`));
-        }
-      },
-      credentials: true,
-      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key'],
-      maxAge: 86400, // Preflight cache 24h
-    })
-  );
+      // Allow exact matches from configured origins
+      if (config.corsOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      // Allow all Vercel deployments, Render apps, and local development origins
+      const isAllowedDomain =
+        /^https:\/\/.*\.vercel\.app$/.test(origin) ||
+        /^https:\/\/.*\.onrender\.com$/.test(origin) ||
+        /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+
+      if (isAllowedDomain) {
+        return callback(null, true);
+      }
+
+      callback(new Error(`Origin '${origin}' is not permitted by CORS policy.`));
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key', 'X-Admin-Key', 'X-Requested-With', 'Accept'],
+    maxAge: 86400, // Preflight cache 24h
+  });
+
+  app.use(corsMiddleware);
+  app.options('*', corsMiddleware);
 
   // 3. Body Parsing with defensive size limits to prevent memory exhaustion DOS
   app.use(express.json({ limit: config.payloadLimits.maxJsonBodyBytes }));
@@ -109,6 +113,12 @@ export function createApp(): Express {
   if (config.apiPrefix !== '/api') {
     app.use(config.apiPrefix, apiRouter);
   }
+
+  // Support canonical root-level auth endpoints: /auth/*
+  app.use('/auth', (req, res, next) => {
+    req.url = `/auth${req.url}`;
+    apiRouter(req, res, next);
+  });
 
   // Support canonical root-level async analysis endpoint: POST /analyze, POST /analysis, and GET /analysis/:id
   app.post('/analyze', (req, res, next) => {

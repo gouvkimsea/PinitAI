@@ -12,7 +12,7 @@ import { AnalyzeButton } from './AnalyzeButton';
 import { LoadingState } from '../LoadingState';
 import { ResultCard } from '../ResultCard/ResultCard';
 import { analyzeContent } from '../../engine/scamDetector';
-import { api } from '../../services/api';
+import { api, API_BASE_URL } from '../../services/api';
 
 interface AnalysisCardProps {
   lang: Language;
@@ -132,14 +132,14 @@ export const AnalysisCard: React.FC<AnalysisCardProps> = ({
 
         let res: Response;
         try {
-          res = await fetch('/api/v1/analyze/message', {
+          res = await fetch(`${API_BASE_URL}/analyze/message`, {
             method: 'POST',
             headers,
             body: JSON.stringify({ content: textContent }),
           });
           if (!res.ok) throw new Error('Gateway returned non-200');
         } catch {
-          res = await fetch('/api/v1/analyze/text', {
+          res = await fetch(`${API_BASE_URL}/analyze/text`, {
             method: 'POST',
             headers,
             body: JSON.stringify({ content: textContent }),
