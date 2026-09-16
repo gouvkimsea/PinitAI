@@ -29,9 +29,11 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
   const [activeTab, setActiveTab] = useState<'overview' | 'dataset' | 'metrics'>('overview');
   const [langFilter, setLangFilter] = useState<'all' | 'en' | 'km' | 'km-en'>('all');
   const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
+    setErrorMessage(null);
     try {
       const [s, m, d] = await Promise.all([
         api.getAdminStats(),
@@ -41,8 +43,9 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
       setStats(s);
       setMetrics(m);
       setDataset(d);
-    } catch (e) {
+    } catch (e: any) {
       console.warn('Failed loading admin data:', e);
+      setErrorMessage(e?.message || 'Failed to load telemetry from server.');
     } finally {
       setIsLoading(false);
     }
@@ -50,28 +53,8 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
 
   useEffect(() => {
     if (!isOpen) return;
-    let isMounted = true;
-    Promise.all([
-      api.getAdminStats(),
-      api.getAdminMetrics(),
-      api.getAdminDataset(),
-    ])
-      .then(([s, m, d]) => {
-        if (isMounted) {
-          setStats(s);
-          setMetrics(m);
-          setDataset(d);
-          setIsLoading(false);
-        }
-      })
-      .catch((e) => {
-        console.warn('Failed loading admin data:', e);
-        if (isMounted) setIsLoading(false);
-      });
-    return () => {
-      isMounted = false;
-    };
-  }, [isOpen]);
+    loadData();
+  }, [isOpen, loadData]);
 
   if (!isOpen) return null;
 
@@ -178,6 +161,18 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
 
         {/* Content Area */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          {errorMessage && (
+            <div className="p-4 rounded-xl bg-danger/10 border border-danger/20 text-xs text-danger flex items-center justify-between animate-fadeIn">
+              <span>{errorMessage}</span>
+              <button
+                type="button"
+                onClick={loadData}
+                className="underline font-semibold ml-3 hover:text-danger-dark cursor-pointer"
+              >
+                Retry
+              </button>
+            </div>
+          )}
           {activeTab === 'overview' && stats && (
             <div className="space-y-6 animate-fadeIn">
               {/* Top Stats Cards */}

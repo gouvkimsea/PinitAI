@@ -44,6 +44,8 @@ COPY --from=builder --chown=pinitsec:nodejs /app/dist ./dist
 COPY --from=builder --chown=pinitsec:nodejs /app/package.json ./package.json
 COPY --from=builder --chown=pinitsec:nodejs /app/prisma ./prisma
 COPY --from=builder --chown=pinitsec:nodejs /app/src/docs/openapi.yaml ./dist/docs/openapi.yaml
+COPY --chown=pinitsec:nodejs docker-entrypoint.sh ./docker-entrypoint.sh
+RUN chmod +x ./docker-entrypoint.sh
 
 # Run as unprivileged user
 USER pinitsec
@@ -53,4 +55,5 @@ EXPOSE 4000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:4000/api/v1/health || exit 1
 
+ENTRYPOINT ["./docker-entrypoint.sh"]
 CMD ["node", "dist/server.js"]

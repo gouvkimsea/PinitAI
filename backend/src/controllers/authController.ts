@@ -11,6 +11,7 @@ import { logSecurityEvent } from '../utils/securityEventLogger';
 import { logger } from '../utils/logger';
 import { sendErrorResponse } from '../utils/responseFormatter';
 import { tokenRevocationService } from '../services/tokenRevocationService';
+import { emailService } from '../services/emailService';
 import { flushAuditLogsNow } from '../middleware/auditLogger';
 
 const RegisterSchema = z.object({
@@ -419,10 +420,13 @@ export class AuthController {
         );
 
         logger.info('Password reset token generated', { userId: user.id });
+        emailService.sendPasswordResetEmail(user.email, resetToken, config.corsOrigins[0]).catch((err) => {
+          logger.warn('[AuthController] Failed dispatching password reset email asynchronously', { error: err?.message });
+        });
       }
 
-      // In non-production environments (test/dev), return token in body for automated testing
-      const isTestEnv = config.nodeEnv === 'test' || config.nodeEnv === 'development';
+      // In automated test environments only, return token in body for test assertions
+      const isTestEnv = config.nodeEnv === 'test' || Boolean(process.env.VITEST);
 
       res.status(200).json({
         success: true,

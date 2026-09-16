@@ -1,19 +1,24 @@
-﻿-- CreateTable
+﻿-- CreateSchema
+CREATE SCHEMA IF NOT EXISTS "public";
+
+-- CreateTable
 CREATE TABLE "users" (
-    "id" TEXT NOT NULL PRIMARY KEY,
+    "id" TEXT NOT NULL,
     "email" TEXT NOT NULL,
     "passwordHash" TEXT NOT NULL,
     "role" TEXT NOT NULL DEFAULT 'user',
     "status" TEXT NOT NULL DEFAULT 'active',
     "apiKeyHash" TEXT,
-    "lastLoginAt" DATETIME,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" DATETIME NOT NULL
+    "lastLoginAt" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "users_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
 CREATE TABLE "scans" (
-    "id" TEXT NOT NULL PRIMARY KEY,
+    "id" TEXT NOT NULL,
     "userId" TEXT,
     "type" TEXT NOT NULL,
     "target" TEXT NOT NULL,
@@ -25,14 +30,15 @@ CREATE TABLE "scans" (
     "threatCategory" TEXT,
     "errorMessage" TEXT,
     "scanDurationMs" INTEGER,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "completedAt" DATETIME,
-    CONSTRAINT "scans_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "completedAt" TIMESTAMP(3),
+
+    CONSTRAINT "scans_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
 CREATE TABLE "files" (
-    "id" TEXT NOT NULL PRIMARY KEY,
+    "id" TEXT NOT NULL,
     "scanId" TEXT NOT NULL,
     "originalName" TEXT NOT NULL,
     "sanitizedName" TEXT NOT NULL,
@@ -40,24 +46,26 @@ CREATE TABLE "files" (
     "detectedMimeType" TEXT,
     "sizeBytes" INTEGER NOT NULL,
     "extension" TEXT NOT NULL,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT "files_scanId_fkey" FOREIGN KEY ("scanId") REFERENCES "scans" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "files_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
 CREATE TABLE "file_hashes" (
-    "id" TEXT NOT NULL PRIMARY KEY,
+    "id" TEXT NOT NULL,
     "fileId" TEXT NOT NULL,
     "sha256" TEXT NOT NULL,
     "sha1" TEXT NOT NULL,
     "md5" TEXT NOT NULL,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT "file_hashes_fileId_fkey" FOREIGN KEY ("fileId") REFERENCES "files" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "file_hashes_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
 CREATE TABLE "url_scans" (
-    "id" TEXT NOT NULL PRIMARY KEY,
+    "id" TEXT NOT NULL,
     "scanId" TEXT NOT NULL,
     "url" TEXT NOT NULL,
     "normalizedUrl" TEXT NOT NULL,
@@ -67,13 +75,14 @@ CREATE TABLE "url_scans" (
     "hasRedirects" BOOLEAN NOT NULL DEFAULT false,
     "redirectCount" INTEGER NOT NULL DEFAULT 0,
     "domainAgeDays" INTEGER,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT "url_scans_scanId_fkey" FOREIGN KEY ("scanId") REFERENCES "scans" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "url_scans_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
 CREATE TABLE "detections" (
-    "id" TEXT NOT NULL PRIMARY KEY,
+    "id" TEXT NOT NULL,
     "scanId" TEXT NOT NULL,
     "modelVersionId" TEXT,
     "engine" TEXT NOT NULL,
@@ -86,14 +95,14 @@ CREATE TABLE "detections" (
     "confidence" INTEGER NOT NULL DEFAULT 50,
     "executionMs" INTEGER,
     "details" TEXT,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT "detections_scanId_fkey" FOREIGN KEY ("scanId") REFERENCES "scans" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
-    CONSTRAINT "detections_modelVersionId_fkey" FOREIGN KEY ("modelVersionId") REFERENCES "model_versions" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "detections_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
 CREATE TABLE "scan_results" (
-    "id" TEXT NOT NULL PRIMARY KEY,
+    "id" TEXT NOT NULL,
     "scanId" TEXT NOT NULL,
     "summary" TEXT NOT NULL,
     "totalEngines" INTEGER NOT NULL DEFAULT 0,
@@ -102,13 +111,14 @@ CREATE TABLE "scan_results" (
     "cleanEngines" INTEGER NOT NULL DEFAULT 0,
     "safeFactors" TEXT NOT NULL DEFAULT '[]',
     "recommendations" TEXT NOT NULL DEFAULT '[]',
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT "scan_results_scanId_fkey" FOREIGN KEY ("scanId") REFERENCES "scans" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "scan_results_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
 CREATE TABLE "analysis_evidence" (
-    "id" TEXT NOT NULL PRIMARY KEY,
+    "id" TEXT NOT NULL,
     "scanId" TEXT NOT NULL,
     "summary" TEXT NOT NULL,
     "indicators" TEXT NOT NULL DEFAULT '[]',
@@ -116,13 +126,14 @@ CREATE TABLE "analysis_evidence" (
     "technicalEvidence" TEXT NOT NULL DEFAULT '{}',
     "uncertaintyNotes" TEXT,
     "groundedScore" INTEGER NOT NULL DEFAULT 100,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT "analysis_evidence_scanId_fkey" FOREIGN KEY ("scanId") REFERENCES "scans" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "analysis_evidence_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
 CREATE TABLE "scam_patterns" (
-    "id" TEXT NOT NULL PRIMARY KEY,
+    "id" TEXT NOT NULL,
     "pattern" TEXT NOT NULL,
     "category" TEXT NOT NULL,
     "severity" TEXT NOT NULL,
@@ -130,13 +141,15 @@ CREATE TABLE "scam_patterns" (
     "source" TEXT NOT NULL,
     "status" TEXT NOT NULL DEFAULT 'active',
     "matchCount" INTEGER NOT NULL DEFAULT 0,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" DATETIME NOT NULL
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "scam_patterns_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
 CREATE TABLE "scam_reports" (
-    "id" TEXT NOT NULL PRIMARY KEY,
+    "id" TEXT NOT NULL,
     "userId" TEXT,
     "scamType" TEXT NOT NULL,
     "target" TEXT,
@@ -145,14 +158,15 @@ CREATE TABLE "scam_reports" (
     "status" TEXT NOT NULL DEFAULT 'PENDING',
     "reviewedBy" TEXT,
     "reviewNotes" TEXT,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT "scam_reports_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "scam_reports_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
 CREATE TABLE "analysis_feedback" (
-    "id" TEXT NOT NULL PRIMARY KEY,
+    "id" TEXT NOT NULL,
     "analysisId" TEXT NOT NULL,
     "userId" TEXT,
     "ipHash" TEXT,
@@ -164,26 +178,29 @@ CREATE TABLE "analysis_feedback" (
     "isReviewed" BOOLEAN NOT NULL DEFAULT false,
     "reviewedBy" TEXT,
     "reviewNote" TEXT,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT "analysis_feedback_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "analysis_feedback_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
 CREATE TABLE "model_versions" (
-    "id" TEXT NOT NULL PRIMARY KEY,
+    "id" TEXT NOT NULL,
     "name" TEXT NOT NULL,
     "version" TEXT NOT NULL,
     "modelType" TEXT NOT NULL,
     "provider" TEXT NOT NULL,
     "isActive" BOOLEAN NOT NULL DEFAULT true,
     "capabilities" TEXT NOT NULL DEFAULT '[]',
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" DATETIME NOT NULL
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "model_versions_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
 CREATE TABLE "api_usage" (
-    "id" TEXT NOT NULL PRIMARY KEY,
+    "id" TEXT NOT NULL,
     "userId" TEXT,
     "apiKeyHash" TEXT,
     "endpoint" TEXT NOT NULL,
@@ -192,46 +209,52 @@ CREATE TABLE "api_usage" (
     "durationMs" INTEGER NOT NULL,
     "requestCount" INTEGER NOT NULL DEFAULT 1,
     "clientIpHash" TEXT,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT "api_usage_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "api_usage_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
 CREATE TABLE "security_events" (
-    "id" TEXT NOT NULL PRIMARY KEY,
+    "id" TEXT NOT NULL,
     "userId" TEXT,
     "eventType" TEXT NOT NULL,
     "severity" TEXT NOT NULL,
     "ipHash" TEXT,
     "targetResource" TEXT,
     "details" TEXT,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT "security_events_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "security_events_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
 CREATE TABLE "threat_intelligence" (
-    "id" TEXT NOT NULL PRIMARY KEY,
+    "id" TEXT NOT NULL,
     "targetType" TEXT NOT NULL,
     "targetValue" TEXT NOT NULL,
     "provider" TEXT NOT NULL,
     "reputationScore" INTEGER NOT NULL DEFAULT 0,
     "threatCategory" TEXT,
     "rawData" TEXT,
-    "expiresAt" DATETIME NOT NULL,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    "expiresAt" TIMESTAMP(3) NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "threat_intelligence_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
 CREATE TABLE "api_logs" (
-    "id" TEXT NOT NULL PRIMARY KEY,
+    "id" TEXT NOT NULL,
     "endpoint" TEXT NOT NULL,
     "method" TEXT NOT NULL,
     "statusCode" INTEGER NOT NULL,
     "ipAddress" TEXT,
     "userAgent" TEXT,
     "durationMs" INTEGER NOT NULL,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "api_logs_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateIndex
@@ -256,10 +279,22 @@ CREATE INDEX "scans_status_idx" ON "scans"("status");
 CREATE INDEX "scans_riskLevel_idx" ON "scans"("riskLevel");
 
 -- CreateIndex
+CREATE INDEX "scans_riskLevel_createdAt_idx" ON "scans"("riskLevel", "createdAt");
+
+-- CreateIndex
 CREATE INDEX "scans_type_idx" ON "scans"("type");
 
 -- CreateIndex
 CREATE INDEX "scans_targetHash_idx" ON "scans"("targetHash");
+
+-- CreateIndex
+CREATE INDEX "scans_targetHash_status_createdAt_idx" ON "scans"("targetHash", "status", "createdAt");
+
+-- CreateIndex
+CREATE INDEX "scans_status_createdAt_idx" ON "scans"("status", "createdAt");
+
+-- CreateIndex
+CREATE INDEX "scans_type_createdAt_idx" ON "scans"("type", "createdAt");
 
 -- CreateIndex
 CREATE INDEX "scans_userId_createdAt_idx" ON "scans"("userId", "createdAt");
@@ -296,6 +331,9 @@ CREATE INDEX "url_scans_isHttps_idx" ON "url_scans"("isHttps");
 
 -- CreateIndex
 CREATE INDEX "detections_scanId_idx" ON "detections"("scanId");
+
+-- CreateIndex
+CREATE INDEX "detections_scanId_severity_idx" ON "detections"("scanId", "severity");
 
 -- CreateIndex
 CREATE INDEX "detections_engine_idx" ON "detections"("engine");
@@ -394,8 +432,53 @@ CREATE INDEX "security_events_userId_createdAt_idx" ON "security_events"("userId
 CREATE INDEX "threat_intelligence_targetType_targetValue_idx" ON "threat_intelligence"("targetType", "targetValue");
 
 -- CreateIndex
+CREATE INDEX "threat_intelligence_targetType_targetValue_expiresAt_idx" ON "threat_intelligence"("targetType", "targetValue", "expiresAt");
+
+-- CreateIndex
 CREATE INDEX "threat_intelligence_expiresAt_idx" ON "threat_intelligence"("expiresAt");
 
 -- CreateIndex
 CREATE INDEX "api_logs_createdAt_idx" ON "api_logs"("createdAt");
+
+-- CreateIndex
+CREATE INDEX "api_logs_endpoint_createdAt_idx" ON "api_logs"("endpoint", "createdAt");
+
+-- CreateIndex
+CREATE INDEX "api_logs_statusCode_createdAt_idx" ON "api_logs"("statusCode", "createdAt");
+
+-- AddForeignKey
+ALTER TABLE "scans" ADD CONSTRAINT "scans_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "files" ADD CONSTRAINT "files_scanId_fkey" FOREIGN KEY ("scanId") REFERENCES "scans"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "file_hashes" ADD CONSTRAINT "file_hashes_fileId_fkey" FOREIGN KEY ("fileId") REFERENCES "files"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "url_scans" ADD CONSTRAINT "url_scans_scanId_fkey" FOREIGN KEY ("scanId") REFERENCES "scans"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "detections" ADD CONSTRAINT "detections_scanId_fkey" FOREIGN KEY ("scanId") REFERENCES "scans"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "detections" ADD CONSTRAINT "detections_modelVersionId_fkey" FOREIGN KEY ("modelVersionId") REFERENCES "model_versions"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "scan_results" ADD CONSTRAINT "scan_results_scanId_fkey" FOREIGN KEY ("scanId") REFERENCES "scans"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "analysis_evidence" ADD CONSTRAINT "analysis_evidence_scanId_fkey" FOREIGN KEY ("scanId") REFERENCES "scans"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "scam_reports" ADD CONSTRAINT "scam_reports_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "analysis_feedback" ADD CONSTRAINT "analysis_feedback_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "api_usage" ADD CONSTRAINT "api_usage_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "security_events" ADD CONSTRAINT "security_events_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 

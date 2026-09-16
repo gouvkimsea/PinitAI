@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -61,6 +61,7 @@ model Scan {
 
   @@index([status])
   @@index([riskLevel])
+  @@index([riskLevel, createdAt])
   @@index([type])
   @@index([targetHash])
   @@index([targetHash, status, createdAt])

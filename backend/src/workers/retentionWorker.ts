@@ -52,14 +52,38 @@ export class RetentionWorker {
       });
       purgedSecurityEventsCount = secResult.count;
 
-      // 3. Purge terminal scans (COMPLETED or FAILED) older than retention period
-      const scansResult = await prisma.scan.deleteMany({
-        where: {
-          createdAt: { lt: cutoffDate },
-          status: { in: ['COMPLETED', 'FAILED'] },
-        },
-      });
-      purgedScansCount = scansResult.count;
+      // 3. Purge terminal scans (COMPLETED or FAILED) older than retention period in safe batches of 500
+      let hasMoreScans = true;
+      const batchSize = 500;
+      while (hasMoreScans) {
+        const expiredBatch = await prisma.scan.findMany({
+          where: {
+            createdAt: { lt: cutoffDate },
+            status: { in: ['COMPLETED', 'FAILED'] },
+          },
+          select: { id: true },
+          take: batchSize,
+        });
+
+        if (expiredBatch.length === 0) {
+          hasMoreScans = false;
+          break;
+        }
+
+        const idsToDelete = expiredBatch.map((s) => s.id);
+        const deletedResult = await prisma.scan.deleteMany({
+          where: { id: { in: idsToDelete } },
+        });
+
+        purgedScansCount += deletedResult.count;
+
+        if (expiredBatch.length < batchSize) {
+          hasMoreScans = false;
+        } else {
+          // Micro-pause between batches to release database locks
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+      }
 
       logger.info('Data retention purge job completed successfully', {
         purgedApiUsageCount,

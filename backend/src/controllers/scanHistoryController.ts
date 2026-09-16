@@ -119,6 +119,22 @@ export class ScanHistoryController {
         return;
       }
 
+      // Enforce ownership: If scan belongs to an account, only the owner or an admin may view it
+      if (scan.userId) {
+        const isOwner = req.user && req.user.id === scan.userId;
+        const isAdmin = req.user && req.user.role === 'admin';
+        if (!isOwner && !isAdmin) {
+          sendErrorResponse(
+            res,
+            403,
+            'FORBIDDEN',
+            'You do not have permission to access this private analysis record.',
+            req
+          );
+          return;
+        }
+      }
+
       let parsedSafeFactors: string[] = [];
       let parsedRecommendations: string[] = [];
       if (scan.scanResult) {

@@ -132,16 +132,16 @@ export const AnalysisCard: React.FC<AnalysisCardProps> = ({
 
         let res: Response;
         try {
-          res = await fetch('http://localhost:5000/api/v1/analyze/message', {
+          res = await fetch('/api/v1/analyze/message', {
             method: 'POST',
             headers,
             body: JSON.stringify({ content: textContent }),
           });
           if (!res.ok) throw new Error('Gateway returned non-200');
         } catch {
-          res = await fetch('http://127.0.0.1:8000/api/analyze/message', {
+          res = await fetch('/api/v1/analyze/text', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers,
             body: JSON.stringify({ content: textContent }),
           });
         }

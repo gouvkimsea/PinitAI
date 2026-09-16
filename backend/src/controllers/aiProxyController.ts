@@ -197,7 +197,11 @@ export class AiProxyController {
    */
   async getAdminStats(_req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
-      const aiRes = await fetch(`${this.aiBase}/api/admin/stats`);
+      const aiRes = await fetch(`${this.aiBase}/api/admin/stats`, {
+        headers: {
+          'X-Admin-Key': config.adminApiKey,
+        },
+      });
       const data = await aiRes.json();
       res.status(aiRes.status).json(data);
     } catch (err) {
@@ -210,7 +214,11 @@ export class AiProxyController {
    */
   async getAdminMetrics(_req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
-      const aiRes = await fetch(`${this.aiBase}/api/admin/metrics`);
+      const aiRes = await fetch(`${this.aiBase}/api/admin/metrics`, {
+        headers: {
+          'X-Admin-Key': config.adminApiKey,
+        },
+      });
       const data = await aiRes.json();
       res.status(aiRes.status).json(data);
     } catch (err) {
@@ -223,7 +231,11 @@ export class AiProxyController {
    */
   async getAdminDataset(_req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
-      const aiRes = await fetch(`${this.aiBase}/api/admin/dataset`);
+      const aiRes = await fetch(`${this.aiBase}/api/admin/dataset`, {
+        headers: {
+          'X-Admin-Key': config.adminApiKey,
+        },
+      });
       const data = await aiRes.json();
       res.status(aiRes.status).json(data);
     } catch (err) {
@@ -239,6 +251,9 @@ export class AiProxyController {
       const { id } = req.params;
       const aiRes = await fetch(`${this.aiBase}/api/admin/dataset/verify/${id}`, {
         method: 'POST',
+        headers: {
+          'X-Admin-Key': config.adminApiKey,
+        },
       });
       const data = await aiRes.json();
       res.status(aiRes.status).json(data);

@@ -28,9 +28,20 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  // Do not intercept API requests (ports 8000, 5000, or /api)
+  // Only intercept and cache idempotent GET requests
+  if (event.request.method !== 'GET') {
+    return;
+  }
+
+  // Do not intercept API requests or scan endpoints
   const url = new URL(event.request.url);
-  if (url.port === '8000' || url.port === '5000' || url.pathname.startsWith('/api')) {
+  if (
+    url.port === '8000' ||
+    url.port === '5000' ||
+    url.pathname.startsWith('/api') ||
+    url.pathname.startsWith('/analyze') ||
+    url.pathname.startsWith('/analysis')
+  ) {
     return;
   }
 

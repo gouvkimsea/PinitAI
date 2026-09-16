@@ -26,6 +26,15 @@ def decode_qr_image_bytes(image_bytes: bytes) -> str:
         if img is None:
             return ""
         
+        # Cap image resolution to max dimension 1920 to prevent memory spikes & slow OpenCV operations
+        h, w = img.shape[:2]
+        max_dim = 1920
+        if max(h, w) > max_dim:
+            scale = max_dim / float(max(h, w))
+            new_w = int(w * scale)
+            new_h = int(h * scale)
+            img = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_AREA)
+
         detector = cv2.QRCodeDetector()
         data, points, _ = detector.detectAndDecode(img)
         return data.strip() if data else ""

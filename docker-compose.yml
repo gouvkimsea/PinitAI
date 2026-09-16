@@ -6,6 +6,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.frontend
+      args:
+        VITE_API_BASE_URL: /api/v1
     container_name: scamcheck-frontend
     restart: unless-stopped
     ports:
@@ -27,14 +29,22 @@ services:
     environment:
       NODE_ENV: production
       PORT: 4000
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost,http://localhost:80}
       DATABASE_PROVIDER: postgresql
       DATABASE_URL: "postgresql://${POSTGRES_USER:-scamcheck}:${POSTGRES_PASSWORD:?Error: POSTGRES_PASSWORD must be configured in .env}@postgres:5432/${POSTGRES_DB:-scamcheck_db}?schema=public"
       REDIS_URL: "redis://:${REDIS_PASSWORD:?Error: REDIS_PASSWORD must be configured in .env}@redis:6379"
       AI_ENGINE_URL: "http://ai-engine:8000"
       ADMIN_API_KEY: ${ADMIN_API_KEY:?Error: ADMIN_API_KEY must be configured in .env}
       JWT_SECRET: ${JWT_SECRET:?Error: JWT_SECRET must be configured in .env}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      VIRUSTOTAL_API_KEY: ${VIRUSTOTAL_API_KEY:-}
+      DATA_RETENTION_DAYS: ${DATA_RETENTION_DAYS:-90}
+      UV_THREADPOOL_SIZE: 16
       CLAMAV_HOST: clamav
       CLAMAV_PORT: 3310
+    volumes:
+      - backend_storage:/app/storage
+      - backend_logs:/app/logs
     depends_on:
       postgres:
         condition: service_healthy
@@ -120,3 +130,5 @@ volumes:
   postgres_data:
   redis_data:
   clamav_db:
+  backend_storage:
+  backend_logs:

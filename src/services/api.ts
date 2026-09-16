@@ -12,7 +12,7 @@ import type {
 } from '../types';
 import { analyzeContent } from '../engine/scamDetector';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api/v1';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1';
 
 export interface UserProfile {
   id: string;
@@ -155,6 +155,27 @@ class ApiService {
       headers['Authorization'] = `Bearer ${token}`;
     }
     return headers;
+  }
+
+  public async fetchWithAuth(url: string, init: RequestInit = {}): Promise<Response> {
+    const headers: Record<string, string> = {
+      ...(this.getAuthHeaders() as Record<string, string>),
+      ...(init.headers as Record<string, string> || {}),
+    };
+
+    const res = await fetch(url, {
+      ...init,
+      headers,
+    });
+
+    if (res.status === 401) {
+      this.logout();
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('pinit:auth-expired'));
+      }
+    }
+
+    return res;
   }
 
   async checkHealth(): Promise<boolean> {
@@ -514,8 +535,7 @@ class ApiService {
           throw new Error(`Gateway returned ${res.status}`);
         }
       } catch {
-        // Fallback directly to Python AI Engine
-        res = await sendQrRequest('http://127.0.0.1:8000/api/analyze/qr');
+        throw new Error('QR analysis failed. Please verify API gateway connectivity.');
       }
 
       if (res.ok) {
@@ -662,98 +682,35 @@ class ApiService {
   // Admin Operations & Model Telemetry
   // ------------------------------------
   async getAdminStats(): Promise<AdminStats> {
-    try {
-      let res = await fetch(`${API_BASE_URL}/admin/stats`, {
-        headers: this.getAuthHeaders(),
-      });
-      if (!res.ok) {
-        res = await fetch('http://127.0.0.1:8000/api/admin/stats');
-      }
-      if (res.ok) {
-        return await res.json();
-      }
-    } catch {
-      // Fallback baseline stats
+    const res = await this.fetchWithAuth(`${API_BASE_URL}/admin/stats`);
+    if (!res.ok) {
+      throw new Error(`Admin stats request failed (HTTP ${res.status}). Ensure backend and AI engine are active.`);
     }
-    return {
-      total_scans: 1420,
-      scams_detected: 638,
-      high_risk_urls: 294,
-      false_positive_rate: 2.1,
-      most_common_threat: 'PHISHING',
-      category_distribution: {
-        PHISHING: 420,
-        JOB_SCAM: 180,
-        INVESTMENT_SCAM: 140,
-        PRIZE_SCAM: 95,
-        SAFE: 450,
-      },
-      language_distribution: {
-        en: 780,
-        km: 420,
-        'km-en': 220,
-      },
-    };
+    return await res.json();
   }
 
   async getAdminMetrics(): Promise<ModelMetrics> {
-    try {
-      let res = await fetch(`${API_BASE_URL}/admin/metrics`, {
-        headers: this.getAuthHeaders(),
-      });
-      if (!res.ok) {
-        res = await fetch('http://127.0.0.1:8000/api/admin/metrics');
-      }
-      if (res.ok) {
-        return await res.json();
-      }
-    } catch {
-      // Fallback
+    const res = await this.fetchWithAuth(`${API_BASE_URL}/admin/metrics`);
+    if (!res.ok) {
+      throw new Error(`Admin metrics request failed (HTTP ${res.status}).`);
     }
-    return {
-      accuracy: 1.0,
-      precision: 1.0,
-      recall: 1.0,
-      f1_score: 1.0,
-      false_positives: 0,
-      false_negatives: 0,
-      total_evaluated: 30,
-    };
+    return await res.json();
   }
 
   async getAdminDataset(): Promise<TrainingSample[]> {
-    try {
-      let res = await fetch(`${API_BASE_URL}/admin/dataset`, {
-        headers: this.getAuthHeaders(),
-      });
-      if (!res.ok) {
-        res = await fetch('http://127.0.0.1:8000/api/admin/dataset');
-      }
-      if (res.ok) {
-        const data = await res.json();
-        return data.items;
-      }
-    } catch {
-      // Fallback
+    const res = await this.fetchWithAuth(`${API_BASE_URL}/admin/dataset`);
+    if (!res.ok) {
+      throw new Error(`Admin dataset request failed (HTTP ${res.status}).`);
     }
-    return [];
+    const data = await res.json();
+    return data.items || [];
   }
 
   async verifyDatasetItem(itemId: string): Promise<boolean> {
-    try {
-      let res = await fetch(`${API_BASE_URL}/admin/dataset/verify/${itemId}`, {
-        method: 'POST',
-        headers: this.getAuthHeaders(),
-      });
-      if (!res.ok) {
-        res = await fetch(`http://127.0.0.1:8000/api/admin/dataset/verify/${itemId}`, {
-          method: 'POST',
-        });
-      }
-      return res.ok;
-    } catch {
-      return false;
-    }
+    const res = await this.fetchWithAuth(`${API_BASE_URL}/admin/dataset/verify/${itemId}`, {
+      method: 'POST',
+    });
+    return res.ok;
   }
 }
 

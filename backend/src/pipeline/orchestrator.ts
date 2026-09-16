@@ -7,6 +7,8 @@ import { evidenceCollector } from './evidence/evidenceCollector';
 import { riskEngine } from '../modules/risk/riskEngine';
 import { explanationEngine } from '../modules/ai/explanationEngine';
 import { PipelineInput, PipelineContext, PipelineFinalResult } from './types';
+import IORedis from 'ioredis';
+import { config } from '../config';
 import { logger } from '../utils/logger';
 import { LruCache } from '../utils/lruCache';
 import { metricsCollector } from '../modules/monitoring/metricsCollector';
@@ -16,6 +18,25 @@ export class DetectionPipeline {
     maxSize: 1000,
     defaultTtlMs: 10 * 60 * 1000, // 10 minutes cache freshness
   });
+  private redisClient: IORedis | null = null;
+
+  constructor() {
+    if (config.redisUrl && config.redisUrl.trim().length > 0) {
+      try {
+        this.redisClient = new IORedis(config.redisUrl, {
+          lazyConnect: true,
+          enableOfflineQueue: false,
+          maxRetriesPerRequest: 1,
+        });
+        this.redisClient.connect().catch((err) => {
+          logger.warn('DetectionPipeline Redis connection failed, using in-memory cache', { error: err.message });
+          this.redisClient = null;
+        });
+      } catch {
+        this.redisClient = null;
+      }
+    }
+  }
 
   public getCacheStats() {
     return this.duplicateCache.getStats();
@@ -44,7 +65,18 @@ export class DetectionPipeline {
       : null;
 
     if (targetHash && !input.metadata?.bypassCache && !input.metadata?.noCache) {
-      const cached = this.duplicateCache.get(targetHash);
+      let cached = this.duplicateCache.get(targetHash);
+      if (!cached && this.redisClient && this.redisClient.status === 'ready') {
+        try {
+          const raw = await this.redisClient.get(`pinit:dedup:${targetHash}`);
+          if (raw) {
+            cached = JSON.parse(raw);
+            if (cached) this.duplicateCache.set(targetHash, cached);
+          }
+        } catch {
+          // Graceful fallback on redis read error
+        }
+      }
       if (cached) {
         logger.info('Duplicate analysis cache hit — returning cached scan result', {
           scanId,
@@ -360,6 +392,9 @@ export class DetectionPipeline {
 
     if (targetHash) {
       this.duplicateCache.set(targetHash, finalResult);
+      if (this.redisClient && this.redisClient.status === 'ready') {
+        this.redisClient.set(`pinit:dedup:${targetHash}`, JSON.stringify(finalResult), 'EX', 600).catch(() => {});
+      }
     }
 
     if (input.type === 'URL') {

@@ -11,6 +11,7 @@ import {
   ContentComparisonOptions,
   ContentComparisonResult,
   PatternSeverity,
+  PatternStatus,
 } from './types';
 
 interface CachedPattern {
@@ -69,30 +70,7 @@ export class ScamIntelligenceService {
    * Creates the scam_patterns table in SQLite if it does not already exist.
    */
   private async ensureTableSchema(): Promise<void> {
-    await prisma.$executeRawUnsafe(`
-      CREATE TABLE IF NOT EXISTS scam_patterns (
-        id TEXT PRIMARY KEY,
-        pattern TEXT NOT NULL,
-        category TEXT NOT NULL,
-        severity TEXT NOT NULL,
-        description TEXT NOT NULL,
-        source TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'active',
-        matchCount INTEGER NOT NULL DEFAULT 0,
-        createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-      );
-    `);
-
-    await prisma.$executeRawUnsafe(`
-      CREATE INDEX IF NOT EXISTS idx_scam_patterns_category ON scam_patterns(category);
-    `);
-    await prisma.$executeRawUnsafe(`
-      CREATE INDEX IF NOT EXISTS idx_scam_patterns_status ON scam_patterns(status);
-    `);
-    await prisma.$executeRawUnsafe(`
-      CREATE INDEX IF NOT EXISTS idx_scam_patterns_severity ON scam_patterns(severity);
-    `);
+    // Schema is managed declaratively by Prisma migrations (PostgreSQL / SQLite agnostic)
   }
 
   /**
@@ -100,11 +78,7 @@ export class ScamIntelligenceService {
    */
   public async seedDefaultCatalogIfEmpty(): Promise<number> {
     try {
-      const countRows = await prisma.$queryRawUnsafe<Array<{ count: number | bigint }>>(
-        `SELECT COUNT(*) as count FROM scam_patterns`
-      );
-      const total = Number(countRows[0]?.count || 0);
-
+      const total = await prisma.scamPattern.count();
       if (total === 0) {
         return (await this.seedCatalog(false)).count;
       }
@@ -122,11 +96,10 @@ export class ScamIntelligenceService {
     await this.ensureTableSchema();
 
     if (forceReset) {
-      await prisma.$executeRawUnsafe(`DELETE FROM scam_patterns`);
+      await prisma.scamPattern.deleteMany();
     }
 
     let inserted = 0;
-    const now = new Date().toISOString();
 
     for (const item of DEFAULT_SCAM_PATTERNS) {
       const id = item.id || uuidv4();
@@ -134,40 +107,35 @@ export class ScamIntelligenceService {
 
       try {
         if (forceReset) {
-          await prisma.$executeRawUnsafe(
-            `INSERT INTO scam_patterns (id, pattern, category, severity, description, source, status, createdAt, updatedAt)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            id,
-            item.pattern,
-            item.category,
-            item.severity,
-            item.description,
-            item.source,
-            status,
-            now,
-            now
-          );
+          await prisma.scamPattern.create({
+            data: {
+              id,
+              pattern: item.pattern,
+              category: item.category,
+              severity: item.severity,
+              description: item.description,
+              source: item.source,
+              status,
+            },
+          });
           inserted++;
         } else {
-          // Check if exists
-          const existing = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
-            `SELECT id FROM scam_patterns WHERE pattern = ? LIMIT 1`,
-            item.pattern
-          );
-          if (!existing || existing.length === 0) {
-            await prisma.$executeRawUnsafe(
-              `INSERT INTO scam_patterns (id, pattern, category, severity, description, source, status, createdAt, updatedAt)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-              id,
-              item.pattern,
-              item.category,
-              item.severity,
-              item.description,
-              item.source,
-              status,
-              now,
-              now
-            );
+          const existing = await prisma.scamPattern.findFirst({
+            where: { pattern: item.pattern },
+            select: { id: true },
+          });
+          if (!existing) {
+            await prisma.scamPattern.create({
+              data: {
+                id,
+                pattern: item.pattern,
+                category: item.category,
+                severity: item.severity,
+                description: item.description,
+                source: item.source,
+                status,
+              },
+            });
             inserted++;
           }
         }
@@ -181,17 +149,24 @@ export class ScamIntelligenceService {
   }
 
   /**
-   * Refreshes the in-memory compiled regex cache from the SQLite database.
+   * Refreshes the in-memory compiled regex cache from the database.
    */
   public async refreshCache(): Promise<void> {
     try {
-      const rows = await prisma.$queryRawUnsafe<ScamPatternRecord[]>(
-        `SELECT id, pattern, category, severity, description, source, status, createdAt, updatedAt
-         FROM scam_patterns
-         WHERE status = 'active'`
-      );
+      const rows = await prisma.scamPattern.findMany({
+        where: { status: 'active' },
+        orderBy: { createdAt: 'desc' },
+      });
 
-      this.cache = this.compileRecords(rows);
+      this.cache = this.compileRecords(
+        rows.map((r) => ({
+          ...r,
+          severity: r.severity as PatternSeverity,
+          status: r.status as PatternStatus,
+          createdAt: r.createdAt.toISOString(),
+          updatedAt: r.updatedAt.toISOString(),
+        }))
+      );
       this.lastCacheRefresh = Date.now();
     } catch (err) {
       logger.error('Failed to refresh scam intelligence cache from database', { error: err });
@@ -391,44 +366,46 @@ export class ScamIntelligenceService {
   public async getPatterns(filter?: PatternQueryFilter): Promise<{ patterns: ScamPatternRecord[]; total: number }> {
     await this.initialize();
 
-    const conditions: string[] = ['1=1'];
-    const params: unknown[] = [];
+    const where: Record<string, unknown> = {};
 
     if (filter?.category) {
-      conditions.push('category = ?');
-      params.push(filter.category);
+      where.category = filter.category;
     }
     if (filter?.severity) {
-      conditions.push('severity = ?');
-      params.push(filter.severity);
+      where.severity = filter.severity;
     }
     if (filter?.status) {
-      conditions.push('status = ?');
-      params.push(filter.status);
+      where.status = filter.status;
     }
     if (filter?.search) {
-      conditions.push('(pattern LIKE ? OR description LIKE ? OR source LIKE ?)');
-      const searchPattern = `%${filter.search}%`;
-      params.push(searchPattern, searchPattern, searchPattern);
+      where.OR = [
+        { pattern: { contains: filter.search, mode: 'insensitive' } },
+        { description: { contains: filter.search, mode: 'insensitive' } },
+        { source: { contains: filter.search, mode: 'insensitive' } },
+      ];
     }
-
-    const whereClause = conditions.join(' AND ');
-    const countSql = `SELECT COUNT(*) as count FROM scam_patterns WHERE ${whereClause}`;
-    const countResult = await prisma.$queryRawUnsafe<Array<{ count: number | bigint }>>(countSql, ...params);
-    const total = Number(countResult[0]?.count || 0);
 
     const limit = filter?.limit ? Math.max(1, Math.min(200, filter.limit)) : 50;
     const offset = filter?.offset ? Math.max(0, filter.offset) : 0;
 
-    const dataSql = `
-      SELECT id, pattern, category, severity, description, source, status, createdAt, updatedAt
-      FROM scam_patterns
-      WHERE ${whereClause}
-      ORDER BY createdAt DESC
-      LIMIT ? OFFSET ?
-    `;
+    const [total, records] = await Promise.all([
+      prisma.scamPattern.count({ where }),
+      prisma.scamPattern.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+        skip: offset,
+      }),
+    ]);
 
-    const patterns = await prisma.$queryRawUnsafe<ScamPatternRecord[]>(dataSql, ...params, limit, offset);
+    const patterns: ScamPatternRecord[] = records.map((r) => ({
+      ...r,
+      severity: r.severity as PatternSeverity,
+      status: r.status as PatternStatus,
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+    }));
+
     return { patterns, total };
   }
 
@@ -438,15 +415,19 @@ export class ScamIntelligenceService {
   public async getPatternById(id: string): Promise<ScamPatternRecord | null> {
     await this.initialize();
 
-    const rows = await prisma.$queryRawUnsafe<ScamPatternRecord[]>(
-      `SELECT id, pattern, category, severity, description, source, status, createdAt, updatedAt
-       FROM scam_patterns
-       WHERE id = ?
-       LIMIT 1`,
-      id
-    );
+    const r = await prisma.scamPattern.findUnique({
+      where: { id },
+    });
 
-    return rows[0] || null;
+    if (!r) return null;
+
+    return {
+      ...r,
+      severity: r.severity as PatternSeverity,
+      status: r.status as PatternStatus,
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+    };
   }
 
   /**
@@ -456,30 +437,29 @@ export class ScamIntelligenceService {
     await this.initialize();
 
     const id = uuidv4();
-    const now = new Date().toISOString();
     const status = input.status || 'active';
 
-    await prisma.$executeRawUnsafe(
-      `INSERT INTO scam_patterns (id, pattern, category, severity, description, source, status, createdAt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      id,
-      input.pattern,
-      input.category,
-      input.severity,
-      input.description,
-      input.source,
-      status,
-      now,
-      now
-    );
+    const created = await prisma.scamPattern.create({
+      data: {
+        id,
+        pattern: input.pattern,
+        category: input.category,
+        severity: input.severity,
+        description: input.description,
+        source: input.source,
+        status,
+      },
+    });
 
     await this.refreshCache();
 
-    const created = await this.getPatternById(id);
-    if (!created) {
-      throw new Error('Failed to retrieve newly created scam pattern.');
-    }
-    return created;
+    return {
+      ...created,
+      severity: created.severity as PatternSeverity,
+      status: created.status as PatternStatus,
+      createdAt: created.createdAt.toISOString(),
+      updatedAt: created.updatedAt.toISOString(),
+    };
   }
 
   /**
@@ -488,35 +468,32 @@ export class ScamIntelligenceService {
   public async updatePattern(id: string, input: UpdatePatternInput): Promise<ScamPatternRecord | null> {
     await this.initialize();
 
-    const existing = await this.getPatternById(id);
+    const existing = await prisma.scamPattern.findUnique({ where: { id } });
     if (!existing) {
       return null;
     }
 
-    const updatedPattern = input.pattern ?? existing.pattern;
-    const updatedCategory = input.category ?? existing.category;
-    const updatedSeverity = input.severity ?? existing.severity;
-    const updatedDescription = input.description ?? existing.description;
-    const updatedSource = input.source ?? existing.source;
-    const updatedStatus = input.status ?? existing.status;
-    const now = new Date().toISOString();
-
-    await prisma.$executeRawUnsafe(
-      `UPDATE scam_patterns
-       SET pattern = ?, category = ?, severity = ?, description = ?, source = ?, status = ?, updatedAt = ?
-       WHERE id = ?`,
-      updatedPattern,
-      updatedCategory,
-      updatedSeverity,
-      updatedDescription,
-      updatedSource,
-      updatedStatus,
-      now,
-      id
-    );
+    const updated = await prisma.scamPattern.update({
+      where: { id },
+      data: {
+        pattern: input.pattern ?? undefined,
+        category: input.category ?? undefined,
+        severity: input.severity ?? undefined,
+        description: input.description ?? undefined,
+        source: input.source ?? undefined,
+        status: input.status ?? undefined,
+      },
+    });
 
     await this.refreshCache();
-    return this.getPatternById(id);
+
+    return {
+      ...updated,
+      severity: updated.severity as PatternSeverity,
+      status: updated.status as PatternStatus,
+      createdAt: updated.createdAt.toISOString(),
+      updatedAt: updated.updatedAt.toISOString(),
+    };
   }
 
   /**
@@ -525,12 +502,12 @@ export class ScamIntelligenceService {
   public async deletePattern(id: string): Promise<boolean> {
     await this.initialize();
 
-    const existing = await this.getPatternById(id);
+    const existing = await prisma.scamPattern.findUnique({ where: { id } });
     if (!existing) {
       return false;
     }
 
-    await prisma.$executeRawUnsafe(`DELETE FROM scam_patterns WHERE id = ?`, id);
+    await prisma.scamPattern.delete({ where: { id } });
     await this.refreshCache();
     return true;
   }
