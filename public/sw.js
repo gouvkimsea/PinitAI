@@ -1,5 +1,5 @@
 // ScamCheck AI - Offline Support Service Worker
-const CACHE_NAME = 'scamcheck-v1';
+const CACHE_NAME = 'scamcheck-v2';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
