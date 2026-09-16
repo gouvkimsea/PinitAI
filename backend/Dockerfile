@@ -45,7 +45,7 @@ COPY --from=builder --chown=pinitsec:nodejs /app/package.json ./package.json
 COPY --from=builder --chown=pinitsec:nodejs /app/prisma ./prisma
 COPY --from=builder --chown=pinitsec:nodejs /app/src/docs/openapi.yaml ./dist/docs/openapi.yaml
 COPY --chown=pinitsec:nodejs docker-entrypoint.sh ./docker-entrypoint.sh
-RUN chmod +x ./docker-entrypoint.sh
+RUN chmod +x ./docker-entrypoint.sh && (chmod -R +x ./node_modules/.bin 2>/dev/null || true)
 
 # Run as unprivileged user
 USER pinitsec

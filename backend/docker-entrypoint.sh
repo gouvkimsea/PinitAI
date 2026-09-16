@@ -1,10 +1,14 @@
 #!/bin/sh
 set -e
 
-# Run Prisma migrations to ensure all database tables are up-to-date
+# Run Prisma schema push to ensure all database tables and relations exist in PostgreSQL
 if [ -n "$DATABASE_URL" ]; then
-  echo "[entrypoint] Deploying database migrations..."
-  npx prisma migrate deploy || echo "[entrypoint] Warning: prisma migrate deploy encountered an issue, proceeding..."
+  echo "[entrypoint] Synchronizing PostgreSQL schema with Prisma..."
+  ./node_modules/.bin/prisma db push --skip-generate --accept-data-loss || \
+  npx prisma db push --skip-generate --accept-data-loss || \
+  ./node_modules/.bin/prisma migrate deploy || \
+  npx prisma migrate deploy || \
+  echo "[entrypoint] Warning: Prisma schema sync encountered an issue, proceeding..."
 fi
 
 # Hand over to server process
