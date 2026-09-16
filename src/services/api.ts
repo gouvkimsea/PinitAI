@@ -192,6 +192,13 @@ class ApiService {
     }
   }
 
+  private extractErrorMessage(data: any, fallback: string): string {
+    if (Array.isArray(data?.error?.details) && data.error.details.length > 0) {
+      return data.error.details.map((d: any) => d.message).join(' ');
+    }
+    return data?.error?.message || data?.message || fallback;
+  }
+
   async login(email: string, password: string): Promise<UserProfile> {
     const res = await fetch(`${API_BASE_URL}/auth/login`, {
       method: 'POST',
@@ -201,7 +208,7 @@ class ApiService {
 
     const data = await res.json();
     if (!res.ok || !data.success) {
-      throw new Error(data?.error?.message || 'Login failed.');
+      throw new Error(this.extractErrorMessage(data, 'Login failed.'));
     }
 
     this.setSession(data.token, data.user);
@@ -217,7 +224,7 @@ class ApiService {
 
     const data = await res.json();
     if (!res.ok || !data.success) {
-      throw new Error(data?.error?.message || 'Registration failed.');
+      throw new Error(this.extractErrorMessage(data, 'Registration failed.'));
     }
 
     this.setSession(data.token, data.user);

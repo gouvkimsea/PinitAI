@@ -131,6 +131,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, lang, onS
                     className="w-full pl-9 pr-3 py-2.5 bg-surfaceInput border border-borderDefault rounded-lg text-xs text-typography-headline focus:ring-2 focus:ring-primary/20 focus:outline-none"
                   />
                 </div>
+                {!isLogin && (
+                  <p className="text-[11px] text-typography-muted mt-1.5 flex items-center gap-1">
+                    <span>•</span>
+                    <span>{isKm ? 'យ៉ាងតិច ៨ តួអក្សរ (មានអក្សរធំ A-Z និងលេខ 0-9)' : 'Min 8 chars, at least 1 uppercase letter (A-Z) and 1 number (0-9).'}</span>
+                  </p>
+                )}
               </div>
 
               <button
