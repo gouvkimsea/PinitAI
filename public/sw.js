@@ -1,43 +1,39 @@
-// ScamCheck AI - Offline Support Service Worker
-const CACHE_NAME = 'scamcheck-v2';
-const STATIC_ASSETS = [
-  '/',
-  '/index.html',
-  '/favicon.svg',
-  '/logo.png'
-];
+// Pinit AI - Resilient Offline Support Service Worker
+const CACHE_NAME = 'pinit-v3';
 
-self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(STATIC_ASSETS);
-    })
-  );
+// Install event: activate immediately
+self.addEventListener('install', () => {
   self.skipWaiting();
 });
 
+// Activate event: purge all old caches immediately
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) => {
       return Promise.all(
         keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))
       );
-    })
+    }).then(() => self.clients.claim())
   );
-  self.clients.claim();
 });
 
+// Fetch event: Network-First for HTML navigation; bypass for API and dev
 self.addEventListener('fetch', (event) => {
-  // Only intercept and cache idempotent GET requests
   if (event.request.method !== 'GET') {
     return;
   }
 
-  // Do not intercept API requests or scan endpoints
   const url = new URL(event.request.url);
+
+  // Bypass service worker for local development ports and API calls
   if (
+    url.hostname === 'localhost' ||
+    url.hostname === '127.0.0.1' ||
     url.port === '8000' ||
     url.port === '5000' ||
+    url.port === '4000' ||
+    url.port === '5173' ||
+    url.port === '4173' ||
     url.pathname.startsWith('/api') ||
     url.pathname.startsWith('/analyze') ||
     url.pathname.startsWith('/analysis')
@@ -45,16 +41,36 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
-      return (
-        cachedResponse ||
-        fetch(event.request).catch(() => {
-          if (event.request.mode === 'navigate') {
-            return caches.match('/index.html');
+  // Network-First for navigation (HTML documents): always fetch latest HTML with new asset hashes
+  if (event.request.mode === 'navigate' || url.pathname === '/' || url.pathname === '/index.html') {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          if (response && response.status === 200) {
+            const responseClone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseClone));
           }
+          return response;
         })
-      );
-    })
+        .catch(() => {
+          return caches.match(event.request).then((cached) => cached || caches.match('/index.html'));
+        })
+    );
+    return;
+  }
+
+  // For other requests, try network first to prevent serving stale 404 chunk hashes
+  event.respondWith(
+    fetch(event.request)
+      .then((networkResponse) => {
+        if (networkResponse && networkResponse.status === 200) {
+          const responseClone = networkResponse.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseClone));
+        }
+        return networkResponse;
+      })
+      .catch(() => {
+        return caches.match(event.request);
+      })
   );
 });

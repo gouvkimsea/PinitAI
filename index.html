@@ -21,13 +21,49 @@
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
     <script>
+      // Self-healing service worker lifecycle
       if ('serviceWorker' in navigator && window.location.protocol.startsWith('http')) {
-        window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js').then((reg) => {
-            reg.update();
-          }).catch(() => {});
-        });
+        const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+        if (isLocalhost) {
+          // In local development, unregister any stale service workers and clear cache
+          navigator.serviceWorker.getRegistrations().then((registrations) => {
+            for (const registration of registrations) {
+              registration.unregister();
+            }
+          });
+          if ('caches' in window) {
+            caches.keys().then((keys) => {
+              for (const key of keys) {
+                caches.delete(key);
+              }
+            });
+          }
+        } else {
+          window.addEventListener('load', () => {
+            navigator.serviceWorker.register('/sw.js').then((reg) => {
+              reg.update();
+            }).catch(() => {});
+          });
+        }
       }
+
+      // Auto-recover from stale cached chunk load errors (404 on hashed bundles)
+      window.addEventListener('error', (e) => {
+        const target = e.target;
+        if (target && (target.tagName === 'SCRIPT' || target.tagName === 'LINK')) {
+          const src = target.src || target.href || '';
+          if (src.includes('/assets/') && !sessionStorage.getItem('pinit_reload_attempted')) {
+            sessionStorage.setItem('pinit_reload_attempted', 'true');
+            if ('caches' in window) {
+              caches.keys().then((keys) => Promise.all(keys.map((k) => caches.delete(k)))).then(() => {
+                window.location.reload();
+              });
+            } else {
+              window.location.reload();
+            }
+          }
+        }
+      }, true);
     </script>
     <!-- Elfsight AI Chatbot | PinitAI Chatbot (Immediate load, no lazy deferral) -->
     <div class="elfsight-app-7a5f92e9-c085-42cb-a813-0f57c279707c"></div>
