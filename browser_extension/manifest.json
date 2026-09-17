@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "ScamCheck AI — Link & Scam Guard",
+  "name": "Pinit AI — Link & Scam Guard",
   "version": "1.0.0",
   "description": "Real-time AI-powered protection against phishing links, scam messages, and malicious domains across English and Khmer.",
   "permissions": [
@@ -9,12 +9,13 @@
   ],
   "host_permissions": [
     "http://127.0.0.1:8000/*",
+    "http://localhost:4000/*",
     "http://localhost:5000/*",
     "*://*/*"
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "ScamCheck AI Scanner",
+    "default_title": "Pinit AI Scanner",
     "default_icon": {
       "48": "icon48.png",
       "128": "icon128.png"
