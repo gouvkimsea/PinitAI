@@ -2,29 +2,107 @@
 @tailwind components;
 @tailwind utilities;
 
+@font-face {
+  font-family: '!Khmer OS Siemreap';
+  src: local('!Khmer OS Siemreap'),
+       local('Khmer OS Siemreap'),
+       local('Siemreap'),
+       url('https://fonts.gstatic.com/s/siemreap/v30/Gg82N5oFbgLvHAfNl2Yb.ttf') format('truetype');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Khmer OS Siemreap';
+  src: local('!Khmer OS Siemreap'),
+       local('Khmer OS Siemreap'),
+       local('Siemreap'),
+       url('https://fonts.gstatic.com/s/siemreap/v30/Gg82N5oFbgLvHAfNl2Yb.ttf') format('truetype');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
 @layer base {
   :root {
-    --color-primary: rgb(26, 135, 126);
+    --color-primary: rgb(11, 77, 130);
+    --font-jakarta: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
     --font-inter: 'Inter', system-ui, -apple-system, sans-serif;
-    --font-kantumruy: 'Kantumruy Pro', system-ui, sans-serif;
-    background-color: #FFFFFF;
+    --font-khmer: '!Khmer OS Siemreap', 'Khmer OS Siemreap', 'Siemreap', system-ui, sans-serif;
+    --font-kantumruy: var(--font-khmer);
+    background-color: #f5f7fb;
   }
 
   body {
-    background-color: #FFFFFF;
-    color: #334155;
-    font-family: var(--font-inter);
+    background-color: #f5f7fb;
+    color: #1e293b;
+    font-family: var(--font-jakarta), var(--font-inter), var(--font-khmer);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
 
-  body[data-lang="km"] {
-    font-family: var(--font-kantumruy), var(--font-inter);
+  /* Khmer typography - strictly "!Khmer OS Siemreap" */
+  html[lang="km"],
+  html[data-lang="km"],
+  body[data-lang="km"],
+  [lang="km"],
+  [data-lang="km"],
+  .font-khmer {
+    font-family: '!Khmer OS Siemreap', 'Khmer OS Siemreap', 'Siemreap', system-ui, sans-serif !important;
+  }
+
+  body[data-lang="km"],
+  html[lang="km"] {
+    line-height: 1.8;
+  }
+
+  body[data-lang="km"] h1,
+  html[lang="km"] h1,
+  [data-lang="km"] h1,
+  body[data-lang="km"] h2,
+  html[lang="km"] h2,
+  [data-lang="km"] h2,
+  body[data-lang="km"] h3,
+  html[lang="km"] h3,
+  [data-lang="km"] h3 {
+    line-height: 1.8 !important;
+    letter-spacing: normal !important;
+  }
+
+  body[data-lang="km"] p,
+  html[lang="km"] p,
+  [data-lang="km"] p {
+    line-height: 1.85 !important;
+  }
+
+  body[data-lang="km"] *:not(code):not(pre):not(kbd):not(samp):not(.font-mono),
+  html[lang="km"] *:not(code):not(pre):not(kbd):not(samp):not(.font-mono),
+  [data-lang="km"] *:not(code):not(pre):not(kbd):not(samp):not(.font-mono) {
+    font-family: '!Khmer OS Siemreap', 'Khmer OS Siemreap', 'Siemreap', system-ui, sans-serif !important;
+  }
+
+  body[data-lang="km"] input,
+  body[data-lang="km"] textarea,
+  body[data-lang="km"] button,
+  body[data-lang="km"] select,
+  body[data-lang="km"] optgroup,
+  body[data-lang="km"] option,
+  body[data-lang="km"] label,
+  body[data-lang="km"] p,
+  body[data-lang="km"] span,
+  body[data-lang="km"] h1,
+  body[data-lang="km"] h2,
+  body[data-lang="km"] h3,
+  body[data-lang="km"] h4,
+  body[data-lang="km"] h5,
+  body[data-lang="km"] h6 {
+    font-family: '!Khmer OS Siemreap', 'Khmer OS Siemreap', 'Siemreap', system-ui, sans-serif !important;
   }
 
   /* Accessible focus states */
   *:focus-visible {
-    outline: 2px solid rgb(26, 135, 126);
+    outline: 2px solid #0b4d82;
     outline-offset: 2px;
   }
 }

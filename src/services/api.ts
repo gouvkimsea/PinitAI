@@ -686,7 +686,7 @@ class ApiService {
     } catch {
       // Silent fallback — don't block the user
     }
-    return { success: true, message: 'Feedback recorded for ScamCheck AI evaluation.' };
+    return { success: true, message: 'Feedback recorded for Pinit AI evaluation.' };
   }
 
 

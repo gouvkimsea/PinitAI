@@ -1,5 +1,7 @@
 export type AnalysisMode = 'text' | 'image' | 'url' | 'file' | 'qr';
 
+export type ScanTab = 'file' | 'url' | 'qr' | 'message';
+
 export type RiskLevel = 'safe' | 'suspicious' | 'high_risk';
 
 export type ThreatCategory =

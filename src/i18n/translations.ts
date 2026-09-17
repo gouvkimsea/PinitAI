@@ -1,6 +1,6 @@
 export const translations = {
   en: {
-    brand: "ScamCheck AI",
+    brand: "Pinit AI",
     tagline: "AI Cybersecurity Intelligence",
     nav: {
       home: "Home",
@@ -48,7 +48,7 @@ export const translations = {
       fileSelected: "QR image selected:",
       changeImage: "Change QR code",
       decodedTarget: "Extracted QR Destination:",
-      caution: "ScamCheck AI analyzes QR codes in an isolated parser. Destination links are never opened in your browser.",
+      caution: "Pinit AI analyzes QR codes in an isolated parser. Destination links are never opened in your browser.",
       samplePrompt: "Or test with sample QR code payloads:",
       samples: {
         bankPhish: "Fake Banking Portal QR",
@@ -119,7 +119,7 @@ export const translations = {
       whatCorrect: "What was the correct classification?",
       comments: "Optional notes for our cybersecurity analysts:",
       submit: "Submit Verification",
-      submitted: "Thank you! Your feedback helps train and evaluate ScamCheck AI models.",
+      submitted: "Thank you! Your feedback helps train and evaluate Pinit AI models.",
     },
     evidenceBreakdown: {
       title: "Transparent Multi-Factor Risk Weighting",
@@ -174,11 +174,11 @@ export const translations = {
       recommendedTitle: "Recommended Action",
       keyIndicators: "Key Detection Signals",
       safeHighlights: "Security Highlights",
-      advisoryNotice: "ScamCheck AI provides automated risk evaluation. Cyber threats evolve rapidly. When in doubt, contact official organizations directly.",
+      advisoryNotice: "Pinit AI provides automated risk evaluation. Cyber threats evolve rapidly. When in doubt, contact official organizations directly.",
       confidence: "Confidence Level",
     },
     admin: {
-      title: "ScamCheck AI Security Operations Center",
+      title: "Pinit AI Security Operations Center",
       subtitle: "Real-time threat telemetry, model evaluation, and verified dataset curation",
       totalScans: "Total Scans Processed",
       scamsDetected: "Scams & Threats Detected",
@@ -226,7 +226,7 @@ export const translations = {
       verified: "Zero-retention security scan",
     },
     howItWorks: {
-      heading: "How ScamCheck AI Protects You",
+      heading: "How Pinit AI Protects You",
       subheading: "Three simple steps to verify anything before you take a risk.",
       step1Title: "1. Submit Suspicious Content",
       step1Desc: "Paste a message, website link, QR code image, or file attachment that feels strange.",
@@ -243,7 +243,7 @@ export const translations = {
     },
     footer: {
       rights: "All rights reserved.",
-      disclaimer: "ScamCheck AI is an informational screening platform designed to help users identify potential fraud. It does not replace professional digital forensics.",
+      disclaimer: "Pinit AI is an informational screening platform designed to help users identify potential fraud. It does not replace professional digital forensics.",
       emergencyTitle: "In immediate danger of financial theft?",
       emergencyDesc: "Contact your bank's fraud department immediately and report the incident to your local anti-cybercrime unit.",
       privacyPolicy: "Privacy Policy",
@@ -252,7 +252,7 @@ export const translations = {
     }
   },
   km: {
-    brand: "ScamCheck AI",
+    brand: "Pinit AI",
     tagline: "បញ្ញាសិប្បនិម្មិតសន្តិសុខតាមប្រព័ន្ធអ៊ីនធឺណិត",
     nav: {
       home: "ទំព័រដើម",
@@ -300,7 +300,7 @@ export const translations = {
       fileSelected: "រូបភាព QR ដែលបានជ្រើស៖",
       changeImage: "ប្តូរកូដ QR",
       decodedTarget: "ទិសដៅដែលបានស្រង់ចេញពី QR៖",
-      caution: "ScamCheck AI វិភាគកូដ QR ក្នុងប្រព័ន្ធសុវត្ថិភាពដាច់ដោយឡែក។ តំណនឹងមិនបើកលើកម្មវិធីរុករករបស់អ្នកឡើយ។",
+      caution: "Pinit AI វិភាគកូដ QR ក្នុងប្រព័ន្ធសុវត្ថិភាពដាច់ដោយឡែក។ តំណនឹងមិនបើកលើកម្មវិធីរុករករបស់អ្នកឡើយ។",
       samplePrompt: "ឬសាកល្បងជាមួយកូដ QR គំរូ៖",
       samples: {
         bankPhish: "កូដ QR ធនាគារក្លែងក្លាយ",
@@ -371,7 +371,7 @@ export const translations = {
       whatCorrect: "តើចំណាត់ថ្នាក់ត្រឹមត្រូវគឺជាអ្វី?",
       comments: "កំណត់ចំណាំបន្ថែមសម្រាប់អ្នកជំនាញសុវត្ថិភាព៖",
       submit: "ផ្ញើការផ្ទៀងផ្ទាត់",
-      submitted: "សូមអរគុណ! មតិកែលម្អរបស់អ្នកជួយបណ្តុះបណ្តាល និងកែលម្អម៉ូដែល ScamCheck AI។",
+      submitted: "សូមអរគុណ! មតិកែលម្អរបស់អ្នកជួយបណ្តុះបណ្តាល និងកែលម្អម៉ូដែល Pinit AI។",
     },
     evidenceBreakdown: {
       title: "ការបែងចែកទម្ងន់ហានិភ័យច្បាស់លាស់",
@@ -426,11 +426,11 @@ export const translations = {
       recommendedTitle: "សកម្មភាពដែលគួរអនុវត្ត",
       keyIndicators: "សូចនាកររកឃើញសំខាន់ៗ",
       safeHighlights: "ចំណុចសុវត្ថិភាពសំខាន់ៗ",
-      advisoryNotice: "ScamCheck AI ផ្តល់នូវការវាយតម្លៃហានិភ័យស្វ័យប្រវត្តិ។ ឧក្រិដ្ឋជនបច្ចេកវិទ្យាតែងតែផ្លាស់ប្តូរល្បិចជានិច្ច។ បើសង្ស័យ សូមទាក់ទងទៅស្ថាប័នពាក់ព័ន្ធដោយផ្ទាល់។",
+      advisoryNotice: "Pinit AI ផ្តល់នូវការវាយតម្លៃហានិភ័យស្វ័យប្រវត្តិ។ ឧក្រិដ្ឋជនបច្ចេកវិទ្យាតែងតែផ្លាស់ប្តូរល្បិចជានិច្ច។ បើសង្ស័យ សូមទាក់ទងទៅស្ថាប័នពាក់ព័ន្ធដោយផ្ទាល់។",
       confidence: "កម្រិតទំនុកចិត្ត",
     },
     admin: {
-      title: "មជ្ឈមណ្ឌលប្រតិបត្តិការសន្តិសុខ ScamCheck AI",
+      title: "មជ្ឈមណ្ឌលប្រតិបត្តិការសន្តិសុខ Pinit AI",
       subtitle: "ទិន្នន័យការគំរាមកំហែងជាក់ស្តែង ការវាយតម្លៃម៉ូដែល និងទិន្នន័យបណ្តុះបណ្តាលដែលបានផ្ទៀងផ្ទាត់",
       totalScans: "ចំនួនស្កេនសរុប",
       scamsDetected: "ការគំរាមកំហែងដែលបានរកឃើញ",
@@ -478,7 +478,7 @@ export const translations = {
       verified: "ការស្កេនសុវត្ថិភាពដោយគ្មានការរក្សាទុកទិន្នន័យ",
     },
     howItWorks: {
-      heading: "របៀបដែល ScamCheck AI ការពារអ្នក",
+      heading: "របៀបដែល Pinit AI ការពារអ្នក",
       subheading: "៣ ជំហានងាយៗដើម្បីផ្ទៀងផ្ទាត់អ្វីៗគ្រប់យ៉ាង មុនពេលអ្នកប្រថុយនឹងគ្រោះថ្នាក់។",
       step1Title: "១. ដាក់ស្នើមាតិកាគួរឱ្យសង្ស័យ",
       step1Desc: "បិទភ្ជាប់សារជាអក្សរ តំណភ្ជាប់គេហទំព័រ កូដ QR ឬឯកសារភ្ជាប់ដែលអ្នកមានការសង្ស័យ។",
@@ -495,7 +495,7 @@ export const translations = {
     },
     footer: {
       rights: "រក្សាសិទ្ធិគ្រប់យ៉ាង។",
-      disclaimer: "ScamCheck AI គឺជាវេទិកាផ្តល់ព័ត៌មានដែលរចនាឡើងដើម្បីជួយអ្នកប្រើប្រាស់កំណត់អត្តសញ្ញាណការបោកប្រាស់។ វាមិនជំនួសការស៊ើបអង្កេតបច្ចេកវិទ្យាផ្លូវការឡើយ។",
+      disclaimer: "Pinit AI គឺជាវេទិកាផ្តល់ព័ត៌មានដែលរចនាឡើងដើម្បីជួយអ្នកប្រើប្រាស់កំណត់អត្តសញ្ញាណការបោកប្រាស់។ វាមិនជំនួសការស៊ើបអង្កេតបច្ចេកវិទ្យាផ្លូវការឡើយ។",
       emergencyTitle: "ស្ថិតក្នុងគ្រោះថ្នាក់នៃការបាត់បង់ប្រាក់ភ្លាមៗមែនទេ?",
       emergencyDesc: "ទាក់ទងផ្នែកប្រឆាំងការក្លែងបន្លំរបស់ធនាគាររបស់អ្នកជាបន្ទាន់ ហើយរាយការណ៍ទៅសមត្ថកិច្ចជំនាញប្រឆាំងបទល្មើសបច្ចេកវិទ្យា។",
       privacyPolicy: "គោលការណ៍ឯកជនភាព",

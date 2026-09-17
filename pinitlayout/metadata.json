@@ -1,0 +1,6 @@
+{
+  "name": "Pinit - Threat & Scam Detector",
+  "description": "Analyze links, messages, QR codes, files, and payment requests for scam signals with instant risk scores and threat explanations.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

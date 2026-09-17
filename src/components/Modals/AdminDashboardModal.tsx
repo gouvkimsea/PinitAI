@@ -53,8 +53,30 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
 
   useEffect(() => {
     if (!isOpen) return;
-    loadData();
-  }, [isOpen, loadData]);
+    let active = true;
+    Promise.all([
+      api.getAdminStats(),
+      api.getAdminMetrics(),
+      api.getAdminDataset(),
+    ]).then(([s, m, d]) => {
+      if (active) {
+        setStats(s);
+        setMetrics(m);
+        setDataset(d);
+        setIsLoading(false);
+      }
+    }).catch((e: any) => {
+      if (active) {
+        console.warn('Failed loading admin data:', e);
+        setErrorMessage(e?.message || 'Failed to load telemetry from server.');
+        setIsLoading(false);
+      }
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -66,7 +88,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
     const jsonString = `data:text/json;charset=utf-8,${encodeURIComponent(JSON.stringify(dataset, null, 2))}`;
     const downloadAnchor = document.createElement('a');
     downloadAnchor.setAttribute('href', jsonString);
-    downloadAnchor.setAttribute('download', `scamcheck-training-dataset-${Date.now()}.json`);
+    downloadAnchor.setAttribute('download', `pinit-training-dataset-${Date.now()}.json`);
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
     downloadAnchor.remove();

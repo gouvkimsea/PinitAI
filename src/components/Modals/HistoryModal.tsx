@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { X, Clock, ShieldCheck, AlertTriangle, ShieldAlert, Trash2, Globe, FileText, RefreshCw, Loader2 } from 'lucide-react';
+import { X, Clock, ShieldCheck, AlertTriangle, ShieldAlert, Trash2, Globe, FileText, RefreshCw, Loader2, ArrowRight } from 'lucide-react';
 import type { Language } from '../../types';
 import { api, type ScanHistoryItem } from '../../services/api';
 
@@ -7,12 +7,14 @@ interface HistoryModalProps {
   isOpen: boolean;
   onClose: () => void;
   lang: Language;
+  onSelectScan?: (scan: ScanHistoryItem) => void;
 }
 
 export const HistoryModal: React.FC<HistoryModalProps> = ({
   isOpen,
   onClose,
   lang,
+  onSelectScan,
 }) => {
   const isKm = lang === 'km';
   const [items, setItems] = useState<ScanHistoryItem[]>([]);
@@ -55,6 +57,17 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
     };
   }, [isOpen]);
 
+  // Handle Escape key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   const handleDelete = async (id: string, e: React.MouseEvent) => {
@@ -67,6 +80,13 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
       setError((err as Error).message || 'Failed to delete scan.');
     } finally {
       setDeletingId(null);
+    }
+  };
+
+  const handleRowClick = (scan: ScanHistoryItem) => {
+    if (onSelectScan) {
+      onSelectScan(scan);
+      onClose();
     }
   };
 
@@ -101,9 +121,13 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
       role="dialog"
       aria-modal="true"
       aria-labelledby="history-modal-title"
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-fadeIn"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-fadeIn"
+      onClick={onClose}
     >
-      <div className="w-full max-w-2xl bg-card rounded-2xl border border-borderDefault shadow-elevated p-6 relative flex flex-col max-h-[85vh]">
+      <div
+        className="w-full max-w-2xl bg-card rounded-2xl border border-borderDefault shadow-elevated p-6 relative flex flex-col max-h-[85vh]"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header */}
         <div className="flex items-center justify-between pb-4 border-b border-borderDefault">
           <div className="flex items-center gap-2.5">
@@ -115,7 +139,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
                 {isKm ? 'ប្រវត្តិវិភាគសុវត្ថិភាព' : 'Security Scan History'}
               </h2>
               <p className="text-xs text-typography-muted">
-                {isKm ? 'កំណត់ត្រា និងលទ្ធផលវិភាគមុនៗ' : 'Recent threat inspection and antivirus scan records'}
+                {isKm ? 'កំណត់ត្រា និងលទ្ធផលវិភាគមុនៗ (ចុចលើកំណត់ត្រាដើម្បីមើល)' : 'Recent threat inspections (click any row to view in scanner)'}
               </p>
             </div>
           </div>
@@ -124,7 +148,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
               type="button"
               onClick={loadData}
               disabled={isLoading}
-              className="p-2 text-typography-muted hover:text-typography-headline rounded-lg hover:bg-surfaceInput transition-standard"
+              className="p-2 text-typography-muted hover:text-typography-headline rounded-lg hover:bg-surfaceInput transition-standard cursor-pointer"
               title={isKm ? 'ផ្ទុកឡើងវិញ' : 'Refresh'}
             >
               <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
@@ -132,7 +156,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="p-2 text-typography-muted hover:text-typography-headline rounded-lg hover:bg-surfaceInput transition-standard"
+              className="p-2 text-typography-muted hover:text-typography-headline rounded-lg hover:bg-surfaceInput transition-standard cursor-pointer"
               aria-label="Close modal"
             >
               <X className="w-5 h-5" />
@@ -168,14 +192,23 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
             items.map((scan) => (
               <div
                 key={scan.id}
-                className="p-3.5 rounded-xl border border-borderDefault bg-surfaceInput/40 hover:bg-surfaceInput/80 transition-standard flex items-center justify-between gap-3"
+                role="button"
+                tabIndex={0}
+                onClick={() => handleRowClick(scan)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    handleRowClick(scan);
+                  }
+                }}
+                className="p-3.5 rounded-xl border border-borderDefault bg-surfaceInput/40 hover:bg-surfaceInput/90 hover:border-primary/40 transition-standard flex items-center justify-between gap-3 cursor-pointer group focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
               >
                 <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-8 h-8 rounded-lg bg-card border border-borderDefault flex items-center justify-center text-typography-muted shrink-0">
+                  <div className="w-8 h-8 rounded-lg bg-card border border-borderDefault flex items-center justify-center text-typography-muted shrink-0 group-hover:text-primary transition-colors">
                     {scan.type === 'URL' ? <Globe className="w-4 h-4" /> : <FileText className="w-4 h-4" />}
                   </div>
                   <div className="min-w-0">
-                    <p className="text-xs font-semibold text-typography-headline truncate max-w-[280px] sm:max-w-md">
+                    <p className="text-xs font-semibold text-typography-headline truncate max-w-[280px] sm:max-w-md group-hover:text-primary transition-colors">
                       {scan.target}
                     </p>
                     <div className="flex items-center gap-2 mt-0.5 text-[11px] text-typography-muted">
@@ -198,8 +231,9 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
                     type="button"
                     onClick={(e) => handleDelete(scan.id, e)}
                     disabled={deletingId === scan.id}
-                    className="p-1.5 text-typography-muted hover:text-danger rounded-md hover:bg-danger-light/50 transition-standard disabled:opacity-50"
+                    className="p-1.5 text-typography-muted hover:text-danger rounded-md hover:bg-danger-light/50 transition-standard disabled:opacity-50 cursor-pointer"
                     title={isKm ? 'លុបចេញ' : 'Delete scan'}
+                    aria-label="Delete scan record"
                   >
                     {deletingId === scan.id ? (
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -207,6 +241,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
                       <Trash2 className="w-3.5 h-3.5" />
                     )}
                   </button>
+                  <ArrowRight className="w-4 h-4 text-slate-400 group-hover:text-primary group-hover:translate-x-0.5 transition-all hidden sm:block" />
                 </div>
               </div>
             ))
@@ -219,7 +254,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-1.5 font-medium text-typography-headline bg-surfaceInput hover:bg-borderDefault rounded-lg transition-standard"
+            className="px-4 py-1.5 font-medium text-typography-headline bg-surfaceInput hover:bg-borderDefault rounded-lg transition-standard cursor-pointer"
           >
             {isKm ? 'បិទ' : 'Close'}
           </button>

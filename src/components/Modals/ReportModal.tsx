@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Flag, CheckCircle, Send, Loader2, AlertCircle } from 'lucide-react';
 import type { Language } from '../../types';
 import { api } from '../../services/api';
@@ -23,10 +23,32 @@ export const ReportModal: React.FC<ReportModalProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  // Sync prefillSnippet when opened
+  useEffect(() => {
+    if (isOpen) {
+      setDescription(prefillSnippet);
+      setErrorMessage(null);
+      setSubmitted(false);
+    }
+  }, [isOpen, prefillSnippet]);
+
+  // Handle Escape key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!description.trim()) return;
+
     setIsLoading(true);
     setErrorMessage(null);
 
@@ -53,20 +75,24 @@ export const ReportModal: React.FC<ReportModalProps> = ({
       role="dialog"
       aria-modal="true"
       aria-labelledby="report-modal-title"
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-fadeIn"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-fadeIn"
+      onClick={onClose}
     >
-      <div className="w-full max-w-lg bg-card rounded-2xl border border-borderDefault shadow-elevated p-6 relative">
+      <div
+        className="w-full max-w-lg bg-card rounded-2xl border border-borderDefault shadow-elevated p-6 relative"
+        onClick={(e) => e.stopPropagation()}
+      >
         <button
           type="button"
           onClick={onClose}
-          className="absolute top-4 right-4 p-2 text-typography-muted hover:text-typography-headline rounded-lg hover:bg-surfaceInput transition-standard"
+          className="absolute top-4 right-4 p-2 text-typography-muted hover:text-typography-headline rounded-lg hover:bg-surfaceInput transition-standard cursor-pointer"
           aria-label="Close modal"
         >
           <X className="w-5 h-5" />
         </button>
 
         {submitted ? (
-          <div className="py-8 text-center space-y-3">
+          <div className="py-8 text-center space-y-3 animate-fadeIn">
             <div className="w-14 h-14 mx-auto rounded-full bg-safe-light border border-safe-border flex items-center justify-center text-safe">
               <CheckCircle className="w-8 h-8" />
             </div>
@@ -98,10 +124,11 @@ export const ReportModal: React.FC<ReportModalProps> = ({
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-typography-headline">
+              <label className="text-xs font-semibold text-typography-headline" htmlFor="report-scam-type">
                 {isKm ? 'ប្រភេទនៃការបោកប្រាស់' : 'Scam Category'}
               </label>
               <select
+                id="report-scam-type"
                 value={scamType}
                 onChange={(e) => setScamType(e.target.value)}
                 className="w-full p-2.5 bg-surfaceInput border border-borderDefault rounded-lg text-xs font-medium text-typography-headline focus:ring-2 focus:ring-primary/20 focus:outline-none"
@@ -115,10 +142,11 @@ export const ReportModal: React.FC<ReportModalProps> = ({
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-typography-headline">
+              <label className="text-xs font-semibold text-typography-headline" htmlFor="report-description">
                 {isKm ? 'ព័ត៌មានលម្អិត ឬតំណភ្ជាប់' : 'Evidence / Content Snippet'}
               </label>
               <textarea
+                id="report-description"
                 rows={4}
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
@@ -140,14 +168,14 @@ export const ReportModal: React.FC<ReportModalProps> = ({
                 type="button"
                 onClick={onClose}
                 disabled={isLoading}
-                className="px-4 py-2 text-xs font-medium text-typography-muted hover:text-typography-headline rounded-lg border border-borderDefault disabled:opacity-50"
+                className="px-4 py-2 text-xs font-medium text-typography-muted hover:text-typography-headline rounded-lg border border-borderDefault disabled:opacity-50 cursor-pointer"
               >
                 {isKm ? 'បោះបង់' : 'Cancel'}
               </button>
               <button
                 type="submit"
                 disabled={isLoading}
-                className="px-5 py-2 text-xs font-semibold text-white bg-danger hover:bg-danger-dark rounded-lg flex items-center gap-1.5 transition-standard disabled:opacity-60"
+                className="px-5 py-2 text-xs font-semibold text-white bg-danger hover:bg-danger-dark rounded-lg flex items-center gap-1.5 transition-standard disabled:opacity-60 cursor-pointer"
               >
                 {isLoading ? (
                   <>

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
   X,
   BookOpen,
@@ -9,28 +9,54 @@ import {
   KeyRound,
   CheckCircle,
   AlertTriangle,
+  ArrowRight,
 } from 'lucide-react';
-import type { Language } from '../../types';
+import type { Language, ScanTab } from '../../types';
 import { translations } from '../../i18n/translations';
 
 interface EducationModalProps {
   isOpen: boolean;
   onClose: () => void;
   lang: Language;
+  onTestScam?: (tab: ScanTab, sample: string) => void;
 }
 
 export const EducationModal: React.FC<EducationModalProps> = ({
   isOpen,
   onClose,
   lang,
+  onTestScam,
 }) => {
   const t = translations[lang];
+  const isKm = lang === 'km';
+
+  // Handle Escape key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
-  const scamTopics = [
+  const scamTopics: {
+    id: string;
+    tab: ScanTab;
+    sampleText: string;
+    icon: React.ReactNode;
+    title: string;
+    desc: string;
+    redFlags: string[];
+    safetyTip: string;
+  }[] = [
     {
       id: 'quishing',
+      tab: 'qr',
+      sampleText: 'https://malicious-qr-redirect.ru/auth/login',
       icon: <QrCode className="w-5 h-5 text-primary" />,
       title: t.education.quishingTitle,
       desc: t.education.quishingDesc,
@@ -38,10 +64,12 @@ export const EducationModal: React.FC<EducationModalProps> = ({
         'Physical stickers pasted over genuine parking or restaurant QR codes',
         'QR prompts demanding immediate credit card details or APK downloads',
       ],
-      safetyTip: 'Always preview the decoded URL on ScamCheck AI before following it on your phone.',
+      safetyTip: 'Always preview the decoded URL on Pinit AI before following it on your phone.',
     },
     {
       id: 'phishing',
+      tab: 'url',
+      sampleText: 'https://paypa1-security-verification.top/signin',
       icon: <Globe className="w-5 h-5 text-danger" />,
       title: t.education.phishingTitle,
       desc: t.education.phishingDesc,
@@ -53,6 +81,8 @@ export const EducationModal: React.FC<EducationModalProps> = ({
     },
     {
       id: 'jobs',
+      tab: 'message',
+      sampleText: 'សូមអបអរសាទរ! អ្នកត្រូវបានជ្រើសរើសសម្រាប់ការងារក្រៅម៉ោង Telegram រកបាន $200-$500/ថ្ងៃ ដោយគ្រាន់តែចុច Like វីដេអូ។ សូមដាក់ប្រាក់កក់ $50 ទៅកាបូប USDT ដើម្បីចាប់ផ្តើម។',
       icon: <Briefcase className="w-5 h-5 text-warning" />,
       title: t.education.jobTitle,
       desc: t.education.jobDesc,
@@ -64,6 +94,8 @@ export const EducationModal: React.FC<EducationModalProps> = ({
     },
     {
       id: 'crypto',
+      tab: 'message',
+      sampleText: 'Exclusive VIP Crypto Signal! Deposit $100 and receive guaranteed 500% profit within 24 hours. Zero risk with automated trading bot. Contact @admin now.',
       icon: <TrendingUp className="w-5 h-5 text-suspicious" />,
       title: t.education.investTitle,
       desc: t.education.investDesc,
@@ -75,6 +107,8 @@ export const EducationModal: React.FC<EducationModalProps> = ({
     },
     {
       id: 'otp',
+      tab: 'message',
+      sampleText: 'URGENT: Your ABA Bank account has suspicious transactions. Send your 6-digit SMS OTP verification code immediately to unlock: http://aba-unlock-verify.top',
       icon: <KeyRound className="w-5 h-5 text-danger" />,
       title: t.education.otpTitle,
       desc: t.education.otpDesc,
@@ -86,11 +120,18 @@ export const EducationModal: React.FC<EducationModalProps> = ({
     },
   ];
 
+  const handleTestInScanner = (tab: ScanTab, sample: string) => {
+    onClose();
+    if (onTestScam) {
+      onTestScam(tab, sample);
+    }
+  };
+
   return (
     <div
       role="dialog"
       aria-modal="true"
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fadeIn"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-fadeIn"
       onClick={onClose}
     >
       <div
@@ -114,6 +155,7 @@ export const EducationModal: React.FC<EducationModalProps> = ({
             type="button"
             onClick={onClose}
             className="p-2 rounded-lg text-typography-muted hover:text-typography-body hover:bg-card border border-borderDefault transition-colors cursor-pointer"
+            aria-label="Close dialog"
           >
             <X className="w-4 h-4" />
           </button>
@@ -124,15 +166,30 @@ export const EducationModal: React.FC<EducationModalProps> = ({
           {scamTopics.map((topic) => (
             <div
               key={topic.id}
-              className="p-4 rounded-xl border border-borderDefault bg-surfaceInput/30 space-y-2.5 transition-colors hover:bg-surfaceInput/50"
+              className="p-4 rounded-xl border border-borderDefault bg-surfaceInput/30 space-y-3 transition-colors hover:bg-surfaceInput/50"
             >
-              <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-lg bg-card border border-borderDefault">
-                  {topic.icon}
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-lg bg-card border border-borderDefault">
+                    {topic.icon}
+                  </div>
+                  <h3 className="text-sm font-bold text-typography-headline">{topic.title}</h3>
                 </div>
-                <h3 className="text-sm font-bold text-typography-headline">{topic.title}</h3>
+                {onTestScam && (
+                  <button
+                    type="button"
+                    onClick={() => handleTestInScanner(topic.tab, topic.sampleText)}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-primary bg-primary/10 hover:bg-primary/20 rounded-lg border border-primary/20 transition-all cursor-pointer"
+                    title="Test this scam pattern in the threat scanner"
+                  >
+                    <span>{isKm ? 'សាកល្បងក្នុងម៉ាស៊ីនស្កេន' : 'Test in Scanner'}</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </div>
+
               <p className="text-xs text-typography-body leading-relaxed">{topic.desc}</p>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
                 <div className="p-2.5 rounded-lg bg-danger-light/40 border border-danger-border/40 text-[11px] text-danger-dark space-y-1">
                   <span className="font-semibold uppercase tracking-wider flex items-center gap-1">

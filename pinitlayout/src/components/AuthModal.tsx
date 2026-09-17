@@ -1,45 +1,30 @@
 import React, { useState, useEffect } from 'react';
-import { X, Mail, Lock, User, ArrowRight, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
-import type { Language } from '../../types';
-import { api } from '../../services/api';
-import { PinitLogo } from '../PinitLogo';
+import { X, Mail, Lock, User, ArrowRight, CheckCircle2 } from 'lucide-react';
+import { PinitLogo } from './PinitLogo';
 
 interface AuthModalProps {
   isOpen: boolean;
-  initialMode?: 'login' | 'signup';
+  initialMode: 'login' | 'signup';
   planName?: string | null;
   onClose: () => void;
-  lang?: Language;
-  onSuccess?: () => void;
 }
 
 export const AuthModal: React.FC<AuthModalProps> = ({
   isOpen,
-  initialMode = 'signup',
+  initialMode,
   planName,
   onClose,
-  lang = 'en',
-  onSuccess,
 }) => {
-  const isKm = lang === 'km';
   const [mode, setMode] = useState<'login' | 'signup'>(initialMode);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [submitted, setSubmitted] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [authError, setAuthError] = useState<string | null>(null);
 
-  const [prevOpen, setPrevOpen] = useState(isOpen);
-  const [prevInitialMode, setPrevInitialMode] = useState(initialMode);
-
-  if (isOpen !== prevOpen || initialMode !== prevInitialMode) {
-    setPrevOpen(isOpen);
-    setPrevInitialMode(initialMode);
+  useEffect(() => {
     setMode(initialMode);
     setSubmitted(false);
-    setAuthError(null);
-  }
+  }, [initialMode, isOpen]);
 
   // Handle escape key
   useEffect(() => {
@@ -54,26 +39,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) return;
-
-    setAuthError(null);
-    setIsSubmitting(true);
-
-    try {
-      if (mode === 'login') {
-        await api.login(email, password);
-      } else {
-        await api.register(email, password);
-      }
-      setSubmitted(true);
-      onSuccess?.();
-    } catch (err: any) {
-      setAuthError(err.message || (isKm ? 'ការផ្ទៀងផ្ទាត់មិនជោគជ័យ' : 'Authentication failed. Please check your credentials.'));
-    } finally {
-      setIsSubmitting(false);
-    }
+    setSubmitted(true);
   };
 
   return (
@@ -82,23 +51,22 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       aria-modal="true"
       aria-labelledby="auth-modal-title"
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-fadeIn"
-      onClick={onClose}
     >
       <div 
         className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 overflow-hidden relative"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header Bar matching Pinitlayout */}
+        {/* Header Bar */}
         <div className="bg-[#0b3e6e] text-white p-5 flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <PinitLogo size="sm" />
             <div className="border-l border-sky-600/60 pl-3">
               <h2 id="auth-modal-title" className="text-sm font-bold text-white">
-                {mode === 'login' ? (isKm ? 'ចូលប្រើប្រាស់' : 'Sign In') : (isKm ? 'បង្កើតគណនី' : 'Create Account')}
+                {mode === 'login' ? 'Sign In' : 'Create Account'}
               </h2>
               {planName && (
                 <p className="text-[11px] text-sky-200">
-                  Plan: <span className="font-semibold text-white">{planName}</span>
+                  Selected: <span className="font-semibold text-white">{planName}</span>
                 </p>
               )}
             </div>
@@ -120,21 +88,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 <CheckCircle2 className="w-8 h-8" />
               </div>
               <h3 className="text-lg font-bold text-slate-800">
-                {mode === 'login' 
-                  ? (isKm ? 'សូមស្វាគមន៍មកវិញ!' : 'Welcome back!') 
-                  : (isKm ? 'គណនីត្រូវបានបង្កើតដោយជោគជ័យ!' : 'Account registered successfully!')}
+                {mode === 'login' ? 'Welcome back!' : 'Account registered successfully!'}
               </h3>
               <p className="text-xs text-slate-600 max-w-xs mx-auto">
-                {isKm
-                  ? 'គណនីរបស់អ្នកត្រូវបានតភ្ជាប់ដោយជោគជ័យ។ ឥឡូវនេះអ្នកអាចរក្សាទុកប្រវត្តិស្កេនបានហើយ។'
-                  : 'You are now protected by Pinit threat intelligence database. Your session is active.'}
+                You are now protected by Pinit threat intelligence database. Your session is active.
               </p>
               <button
                 type="button"
                 onClick={onClose}
                 className="mt-4 px-6 py-2.5 bg-[#0b3e6e] text-white text-xs font-semibold rounded-xl hover:bg-[#083057] transition-all"
               >
-                {isKm ? 'បន្តទៅកាន់ផ្ទាំងគ្រប់គ្រង' : 'Continue to Dashboard'}
+                Continue to Dashboard
               </button>
             </div>
           ) : (
@@ -143,41 +107,27 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               <div className="flex border-b border-slate-200 mb-5">
                 <button
                   type="button"
-                  onClick={() => {
-                    setMode('login');
-                    setAuthError(null);
-                  }}
+                  onClick={() => setMode('login')}
                   className={`flex-1 pb-2.5 text-xs sm:text-sm font-semibold border-b-2 transition-all ${
                     mode === 'login'
                       ? 'border-[#0b3e6e] text-[#0b3e6e]'
                       : 'border-transparent text-slate-500 hover:text-slate-800'
                   }`}
                 >
-                  {isKm ? 'ចូលប្រើ' : 'Log In'}
+                  Log In
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    setMode('signup');
-                    setAuthError(null);
-                  }}
+                  onClick={() => setMode('signup')}
                   className={`flex-1 pb-2.5 text-xs sm:text-sm font-semibold border-b-2 transition-all ${
                     mode === 'signup'
                       ? 'border-[#0b3e6e] text-[#0b3e6e]'
                       : 'border-transparent text-slate-500 hover:text-slate-800'
                   }`}
                 >
-                  {isKm ? 'ចុះឈ្មោះ' : 'Sign Up'}
+                  Sign Up
                 </button>
               </div>
-
-              {/* Error Alert */}
-              {authError && (
-                <div role="alert" className="mb-4 p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-700 flex items-center space-x-2">
-                  <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
-                  <span>{authError}</span>
-                </div>
-              )}
 
               <form onSubmit={handleSubmit} className="space-y-4">
                 {mode === 'signup' && (
@@ -190,6 +140,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       <input
                         id="auth-name"
                         type="text"
+                        required
                         value={name}
                         onChange={(e) => setName(e.target.value)}
                         placeholder="Alex Morgan"
@@ -233,29 +184,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       className="w-full pl-9 pr-3 py-2 text-xs sm:text-sm border border-slate-300 rounded-xl focus:border-[#0b3e6e] focus:ring-2 focus:ring-[#0b3e6e]/20 outline-none text-slate-800"
                     />
                   </div>
-                  {mode === 'signup' && (
-                    <p className="text-[11px] text-slate-400 mt-1">
-                      {isKm ? 'យ៉ាងតិច ៨ តួអក្សរ (មានអក្សរធំ និងលេខ)' : 'Min 8 chars, at least 1 uppercase and 1 digit.'}
-                    </p>
-                  )}
                 </div>
 
                 <button
                   type="submit"
-                  disabled={isSubmitting}
-                  className="w-full mt-2 py-2.5 px-4 bg-[#0b3e6e] hover:bg-[#093259] disabled:opacity-50 text-white text-xs sm:text-sm font-semibold rounded-xl transition-colors flex items-center justify-center space-x-1 shadow-sm"
+                  className="w-full mt-2 py-2.5 px-4 bg-[#0b3e6e] hover:bg-[#093259] text-white text-xs sm:text-sm font-semibold rounded-xl transition-colors flex items-center justify-center space-x-1 shadow-sm"
                 >
-                  {isSubmitting ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin mr-1" />
-                      <span>{isKm ? 'កំពុងដំណើរការ...' : 'Processing...'}</span>
-                    </>
-                  ) : (
-                    <>
-                      <span>{mode === 'login' ? (isKm ? 'ចូលប្រើ' : 'Sign In') : (isKm ? 'បង្កើតគណនី' : 'Create Account')}</span>
-                      <ArrowRight className="w-4 h-4 ml-1" />
-                    </>
-                  )}
+                  <span>{mode === 'login' ? 'Sign In' : 'Create Account'}</span>
+                  <ArrowRight className="w-4 h-4" />
                 </button>
               </form>
 

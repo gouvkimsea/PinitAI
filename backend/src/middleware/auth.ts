@@ -19,6 +19,13 @@ export interface AuthenticatedRequest extends Request {
 export async function optionalAuth(req: AuthenticatedRequest, _res: Response, next: NextFunction): Promise<void> {
   const authHeader = req.headers.authorization;
   const apiKeyHeader = req.headers['x-api-key'] as string | undefined;
+  const adminKeyHeader = (req.headers['x-admin-key'] || apiKeyHeader) as string | undefined;
+
+  // Master Admin Key support
+  if (config.adminApiKey && adminKeyHeader && adminKeyHeader.trim() === config.adminApiKey.trim()) {
+    req.user = { id: 'admin-master', email: 'admin@pinit.ai', role: 'admin' };
+    return next();
+  }
 
   if (authHeader && authHeader.startsWith('Bearer ')) {
     const token = authHeader.substring(7);

@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 226 66" fill="none">
+  <!-- Pinit Logo with High Readability -->
+  <!-- Letter P with signature square cutout -->
+  <path d="M 2 6 L 38 6 C 45 6, 49 10, 49 18 L 49 28 C 49 36, 45 40, 38 40 L 16 40 L 16 58 L 2 58 Z M 16 16 L 30 16 L 30 30 L 16 30 Z" fill="#ffffff" fill-rule="evenodd"/>
+  <!-- Letter i -->
+  <rect x="57" y="7" width="12" height="12" rx="1.5" fill="#ffffff"/>
+  <rect x="57" y="24" width="12" height="34" rx="1.5" fill="#ffffff"/>
+  <!-- Letter n -->
+  <path d="M 77 24 L 89 24 L 89 29.5 C 92 25.5, 97 23.5, 103.5 23.5 C 112 23.5, 116 28, 116 36 L 116 58 L 104 58 L 104 38.5 C 104 34, 102 32, 98 32 C 94 32, 92 34.5, 92 39 L 92 58 L 77 58 Z" fill="#ffffff"/>
+  <!-- Letter i -->
+  <rect x="124" y="7" width="12" height="12" rx="1.5" fill="#ffffff"/>
+  <rect x="124" y="24" width="12" height="34" rx="1.5" fill="#ffffff"/>
+  <!-- Letter t -->
+  <path d="M 148 11 L 148 24 L 158 24 L 158 33 L 148 33 L 148 46 C 148 49.5, 150 51, 153.5 51 C 155.5 51, 157.5 50.5, 159 49.5 L 159 57.5 C 156 58.5, 152 59, 147 59 C 139 59, 136 54.5, 136 46 L 136 33 L 130 33 L 130 24 L 136 24 L 136 11 Z" fill="#ffffff"/>
+  <!-- Magnifying Glass & 4-Point Sparkle Star -->
+  <g transform="translate(162, 0)">
+    <circle cx="27" cy="36" r="17" fill="none" stroke="#ffffff" stroke-width="4.2"/>
+    <line x1="40" y1="49" x2="55" y2="64" stroke="#ffffff" stroke-width="5" stroke-linecap="round"/>
+    <path d="M 43 2 Q 43 13 54 13 Q 43 13 43 24 Q 43 13 32 13 Q 43 13 43 2 Z" fill="none" stroke="#ffffff" stroke-width="2.8" stroke-linejoin="round"/>
+  </g>
+</svg>
