@@ -66,7 +66,8 @@ export function auditLogger(req: Request, res: Response, next: NextFunction): vo
       : null;
 
     const isUserDeleted = (req as any).userDeleted || (method === 'DELETE' && originalUrl.includes('/auth/me'));
-    const effectiveUserId = isUserDeleted ? null : (user?.id || null);
+    const isSyntheticUser = !user?.id || user.id === 'admin-master' || user.id.startsWith('admin-');
+    const effectiveUserId = (isUserDeleted || isSyntheticUser) ? null : user.id;
 
     // 1. Record in real-time metrics collector
     MetricsCollector.getInstance().recordApiRequest(duration, statusCode);

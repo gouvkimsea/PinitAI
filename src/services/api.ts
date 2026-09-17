@@ -159,6 +159,14 @@ class ApiService {
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
     }
+    try {
+      const adminKey = localStorage.getItem('pinit_admin_key');
+      if (adminKey) {
+        headers['X-Admin-Key'] = adminKey;
+      }
+    } catch {
+      // ignore
+    }
     return headers;
   }
 

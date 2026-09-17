@@ -29,6 +29,8 @@ interface ThreatScannerProps {
   onTabChange?: (tab: ScanTab) => void;
   lang?: Language;
   onOpenReportScam?: (prefillSnippet?: string) => void;
+  prefilledTarget?: string;
+  loadedResult?: AnalysisResult | null;
 }
 
 export const ThreatScanner: React.FC<ThreatScannerProps> = ({
@@ -36,6 +38,8 @@ export const ThreatScanner: React.FC<ThreatScannerProps> = ({
   onTabChange: _onTabChange,
   lang = 'en',
   onOpenReportScam,
+  prefilledTarget,
+  loadedResult,
 }) => {
   const isKm = lang === 'km';
   const [inputText, setInputText] = useState('');
@@ -51,6 +55,27 @@ export const ThreatScanner: React.FC<ThreatScannerProps> = ({
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Sync prefilled target if passed from Education or History
+  const [prevPrefilledTarget, setPrevPrefilledTarget] = useState(prefilledTarget);
+  if (prefilledTarget !== prevPrefilledTarget) {
+    setPrevPrefilledTarget(prefilledTarget);
+    if (prefilledTarget !== undefined && prefilledTarget !== null) {
+      setInputText(prefilledTarget);
+    }
+  }
+
+  // Sync loaded result if passed from History
+  const [prevLoadedResult, setPrevLoadedResult] = useState(loadedResult);
+  if (loadedResult !== prevLoadedResult) {
+    setPrevLoadedResult(loadedResult);
+    if (loadedResult) {
+      setScanResult(loadedResult);
+      if (loadedResult.inputSnippet) {
+        setInputText(loadedResult.inputSnippet);
+      }
+    }
+  }
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
@@ -451,7 +476,13 @@ Completed: ${scanResult.timestamp}`;
                   setScanResult(null);
                   setErrorMessage(null);
                 }}
-                placeholder={isKm ? "សូមបញ្ចូលសារអត្ថបទ SMS, Telegram, WhatsApp... ដើម្បីស្វែងរកសញ្ញាឆបោក" : "Enter your texts... (Paste suspicious SMS, email body, WhatsApp message, or payment note)"}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                    e.preventDefault();
+                    runAnalysis();
+                  }
+                }}
+                placeholder={isKm ? "សូមបញ្ចូលសារអត្ថបទ SMS, Telegram, WhatsApp... ដើម្បីស្វែងរកសញ្ញាឆបោក (Ctrl+Enter ដើម្បីវិភាគ)" : "Enter your texts... (Paste suspicious SMS, email, WhatsApp, or note — Ctrl+Enter to analyze)"}
                 className="w-full bg-transparent resize-none text-slate-800 text-sm sm:text-base placeholder-slate-400 focus:outline-none"
               />
               {inputText && (
@@ -479,7 +510,13 @@ Completed: ${scanResult.timestamp}`;
                     setScanResult(null);
                     setErrorMessage(null);
                   }}
-                  placeholder={isKm ? "https://example.com/login ឬបិទភ្ជាប់តំណភ្ជាប់គួរឱ្យសង្ស័យ..." : "https://example.com/login or paste suspicious link..."}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      runAnalysis();
+                    }
+                  }}
+                  placeholder={isKm ? "https://example.com/login ឬបិទភ្ជាប់តំណភ្ជាប់គួរឱ្យសង្ស័យ... (ចុច Enter ដើម្បីវិភាគ)" : "https://example.com/login or paste suspicious link... (Press Enter to analyze)"}
                   className="w-full bg-transparent text-slate-800 text-sm sm:text-base placeholder-slate-400 focus:outline-none"
                 />
                 {inputText && (

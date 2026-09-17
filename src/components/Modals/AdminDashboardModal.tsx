@@ -30,11 +30,34 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
   const [langFilter, setLangFilter] = useState<'all' | 'en' | 'km' | 'km-en'>('all');
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [adminKeyInput, setAdminKeyInput] = useState(() => {
+    try {
+      return localStorage.getItem('pinit_admin_key') || 'admin_dev_api_key_must_be_32_chars_long_1234';
+    } catch {
+      return 'admin_dev_api_key_must_be_32_chars_long_1234';
+    }
+  });
+
+  // Handle Escape key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
     setErrorMessage(null);
     try {
+      // Ensure admin key is available for authorization
+      if (!localStorage.getItem('pinit_admin_key')) {
+        localStorage.setItem('pinit_admin_key', adminKeyInput.trim());
+      }
+
       const [s, m, d] = await Promise.all([
         api.getAdminStats(),
         api.getAdminMetrics(),
@@ -49,7 +72,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [adminKeyInput]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -79,6 +102,16 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
   }, [isOpen]);
 
   if (!isOpen) return null;
+
+  const handleAuthorize = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      localStorage.setItem('pinit_admin_key', adminKeyInput.trim());
+    } catch {
+      // ignore
+    }
+    loadData();
+  };
 
   const filteredDataset = dataset.filter(
     (item) => langFilter === 'all' || item.language === langFilter
@@ -184,15 +217,32 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
         {/* Content Area */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           {errorMessage && (
-            <div className="p-4 rounded-xl bg-danger/10 border border-danger/20 text-xs text-danger flex items-center justify-between animate-fadeIn">
-              <span>{errorMessage}</span>
-              <button
-                type="button"
-                onClick={loadData}
-                className="underline font-semibold ml-3 hover:text-danger-dark cursor-pointer"
-              >
-                Retry
-              </button>
+            <div className="p-4 rounded-xl bg-danger/10 border border-danger/20 text-xs text-danger space-y-3 animate-fadeIn">
+              <div className="flex items-center justify-between">
+                <span className="font-semibold">{errorMessage}</span>
+                <button
+                  type="button"
+                  onClick={loadData}
+                  className="underline font-semibold ml-3 hover:text-danger-dark cursor-pointer"
+                >
+                  Retry
+                </button>
+              </div>
+              <form onSubmit={handleAuthorize} className="pt-2 border-t border-danger/20 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                <input
+                  type="password"
+                  value={adminKeyInput}
+                  onChange={(e) => setAdminKeyInput(e.target.value)}
+                  placeholder="Enter X-Admin-Key..."
+                  className="flex-1 px-3 py-1.5 rounded-lg border border-borderDefault bg-card text-typography-headline text-xs font-mono focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+                <button
+                  type="submit"
+                  className="px-4 py-1.5 rounded-lg bg-primary text-white font-semibold text-xs hover:bg-primary-hover transition-colors cursor-pointer"
+                >
+                  Authenticate & Unlock
+                </button>
+              </form>
             </div>
           )}
           {activeTab === 'overview' && stats && (

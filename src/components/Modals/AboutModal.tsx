@@ -19,13 +19,14 @@ export const AboutModal: React.FC<AboutModalProps> = ({
 }) => {
   const isKm = lang === 'km';
   const [activeTab, setActiveTab] = useState<AboutModalTab>(initialTab);
+  const [prevOpen, setPrevOpen] = useState(isOpen);
+  const [prevInitialTab, setPrevInitialTab] = useState(initialTab);
 
-  // Sync tab when opened with specific initialTab
-  useEffect(() => {
-    if (isOpen) {
-      setActiveTab(initialTab);
-    }
-  }, [isOpen, initialTab]);
+  if (isOpen !== prevOpen || initialTab !== prevInitialTab) {
+    setPrevOpen(isOpen);
+    setPrevInitialTab(initialTab);
+    setActiveTab(initialTab);
+  }
 
   // Handle Escape key
   useEffect(() => {

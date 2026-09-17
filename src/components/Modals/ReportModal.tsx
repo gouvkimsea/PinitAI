@@ -23,14 +23,19 @@ export const ReportModal: React.FC<ReportModalProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Sync prefillSnippet when opened
-  useEffect(() => {
+  const [prevOpen, setPrevOpen] = useState(isOpen);
+  const [prevSnippet, setPrevSnippet] = useState(prefillSnippet);
+
+  // Sync prefillSnippet and reset states when opened
+  if (isOpen !== prevOpen || prefillSnippet !== prevSnippet) {
+    setPrevOpen(isOpen);
+    setPrevSnippet(prefillSnippet);
     if (isOpen) {
       setDescription(prefillSnippet);
       setErrorMessage(null);
       setSubmitted(false);
     }
-  }, [isOpen, prefillSnippet]);
+  }
 
   // Handle Escape key
   useEffect(() => {

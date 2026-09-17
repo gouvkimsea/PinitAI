@@ -32,8 +32,8 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onSelectPlan }) 
       badge: 'PRO',
       title: 'Pro',
       subtitle: 'For power users, freelancers & professionals',
-      monthlyPrice: '$5',
-      annualPrice: '$4',
+      monthlyPrice: '$2.98',
+      annualPrice: '$2.38',
       period: 'per month',
       featured: true, // In screenshot, PRO card has solid dark blue background!
       features: [
@@ -52,8 +52,8 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onSelectPlan }) 
       badge: 'TEAM',
       title: 'Team',
       subtitle: 'For teams, agencies & growing organizations',
-      monthlyPrice: '$15',
-      annualPrice: '$12',
+      monthlyPrice: '$5.99',
+      annualPrice: '$4.79',
       period: 'per month (up to 10 seats)',
       featured: false,
       features: [
