@@ -24,7 +24,11 @@ describe('Clean Canonical Scam Detection Architecture API Tests', () => {
 
   afterAll(async () => {
     if (fs.existsSync(testDir)) {
-      fs.rmSync(testDir, { recursive: true, force: true });
+      try {
+        fs.rmSync(testDir, { recursive: true, force: true });
+      } catch {
+        // Ignored on Windows file locking
+      }
     }
     await prisma.$disconnect();
   });

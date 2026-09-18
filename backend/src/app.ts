@@ -13,12 +13,22 @@ import { standardApiLimiter } from './middleware/rateLimiter';
 import { requestTimeoutMiddleware } from './middleware/timeoutHandler';
 import { requestIdMiddleware } from './middleware/requestId';
 import { logger } from './utils/logger';
+import { metricsCollector } from './modules/monitoring/metricsCollector';
 
 export function createApp(): Express {
   const app = express();
 
   // Enable trust proxy for accurate client IP identification behind load balancers/reverse proxies
   app.set('trust proxy', 1);
+
+  // Active concurrency tracking
+  app.use((_req, res, next) => {
+    metricsCollector.incrementActiveRequests();
+    res.on('finish', () => {
+      metricsCollector.decrementActiveRequests();
+    });
+    next();
+  });
 
   // Request Tracing: assign unique request_id to every request
   app.use(requestIdMiddleware);

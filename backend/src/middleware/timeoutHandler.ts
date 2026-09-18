@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { config } from '../config';
 import { logger } from '../utils/logger';
 import { sendErrorResponse } from '../utils/responseFormatter';
+import { metricsCollector } from '../modules/monitoring/metricsCollector';
 
 /**
  * Request timeout middleware.
@@ -11,6 +12,7 @@ export function requestTimeoutMiddleware(timeoutMs: number = config.timeouts.req
   return (req: Request, res: Response, next: NextFunction): void => {
     const timer = setTimeout(() => {
       if (!res.headersSent) {
+        metricsCollector.recordTimeout();
         logger.warn(`Request timed out after ${timeoutMs}ms`, {
           method: req.method,
           path: req.originalUrl,

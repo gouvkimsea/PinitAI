@@ -10,12 +10,50 @@ export type ImpersonationType =
 export interface BrandImpersonationMatch {
   detected: boolean;
   targetedBrand?: string;
+  category?: 'banking' | 'government' | 'shipping' | 'tech' | 'crypto' | 'social';
   impersonationType?: ImpersonationType;
   matchedHostname?: string;
   baseDomain?: string;
   levenshteinDistance?: number;
   similarityScore?: number;
   description?: string;
+  lookalikeSubstitution?: string;
+}
+
+export interface DomainAgeInfo {
+  evaluated: boolean;
+  domainAgeDays?: number;
+  isNewDomain?: boolean; // <= 30 days
+  creationDate?: string;
+  expirationDate?: string;
+  registrar?: string;
+  privacyProtected?: boolean;
+  cached?: boolean;
+  error?: string;
+}
+
+export interface TlsInfo {
+  isHttps: boolean;
+  protocol?: string;
+  issuer?: string;
+  validFrom?: string;
+  validTo?: string;
+  isSelfSigned?: boolean;
+  isExpired?: boolean;
+  daysUntilExpiration?: number;
+}
+
+export interface ContentSignals {
+  evaluated: boolean;
+  pageTitle?: string;
+  titleBrandMismatch?: boolean;
+  matchedBrandInTitle?: string;
+  hasLoginForm?: boolean;
+  hasPasswordInput?: boolean;
+  hasCreditCardInput?: boolean;
+  hasMetaRefresh?: boolean;
+  metaRefreshTarget?: string;
+  isSuspiciousLoginDrop?: boolean;
 }
 
 export interface UrlMetadata {
@@ -23,6 +61,8 @@ export interface UrlMetadata {
   normalizedUrl: string;
   protocol: string;
   isHttps: boolean;
+  isDangerousScheme?: boolean;
+  schemeViolation?: string;
   hostname: string;
   domain: string;
   baseDomain: string;
@@ -35,13 +75,18 @@ export interface UrlMetadata {
   hash: string;
   isIpAddress: boolean;
   ipAddress?: string;
+  normalizedIp?: string;
   isObfuscatedIp: boolean;
   isShortener: boolean;
   shortenerService?: string;
   isPunycode: boolean;
   punycodeDecoded?: string;
+  isMixedScript?: boolean;
+  isLookalike?: boolean;
+  lookalikeDetails?: string;
   hasUserinfo: boolean;
   userinfoCredentials?: string;
+  isTopDomainWhitelist?: boolean;
 }
 
 export interface StructuralAnalysis {
@@ -52,6 +97,10 @@ export interface StructuralAnalysis {
   isExcessiveSubdomains: boolean;
   hasCredentialPath: boolean;
   credentialKeywordsFound: string[];
+  hasPaymentPath?: boolean;
+  paymentKeywordsFound?: string[];
+  hasLoginPath?: boolean;
+  loginKeywordsFound?: string[];
   hasExecutablePayload: boolean;
   executableExtension?: string;
   hasOpenRedirectParam: boolean;
@@ -75,6 +124,9 @@ export interface NetworkProbeResult {
   resolvedIp?: string;
   latencyMs?: number;
   errorMessage?: string;
+  bodySnippet?: string;
+  tlsInfo?: TlsInfo;
+  contentSignals?: ContentSignals;
 }
 
 export interface UrlThreatIndicators {
@@ -87,6 +139,9 @@ export interface UrlThreatIndicators {
     brandImpersonation: BrandImpersonationMatch;
     structural: StructuralAnalysis;
     networkProbe: NetworkProbeResult;
+    domainAge?: DomainAgeInfo;
+    tlsInfo?: TlsInfo;
+    contentSignals?: ContentSignals;
     threatIntelMatched: boolean;
     threatIntelProvider?: string;
   };
@@ -105,6 +160,9 @@ export interface UrlIntelligenceResult {
   metadata: UrlMetadata;
   structural: StructuralAnalysis;
   networkProbe: NetworkProbeResult;
+  domainAge?: DomainAgeInfo;
+  tlsInfo?: TlsInfo;
+  contentSignals?: ContentSignals;
   evidence: UrlThreatIndicators;
   recommendedAction: string;
 }

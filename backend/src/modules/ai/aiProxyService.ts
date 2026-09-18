@@ -67,15 +67,31 @@ async function fetchWithTimeout(
   }
 }
 
+import crypto from 'crypto';
+import { LruCache } from '../../utils/lruCache';
+
 export class AiProxyService {
+  private messageCache = new LruCache<string, any>({ maxSize: 1000, defaultTtlMs: 15 * 60 * 1000 });
+  private urlCache = new LruCache<string, any>({ maxSize: 1000, defaultTtlMs: 15 * 60 * 1000 });
+
   private get aiBase(): string {
     return config.aiEngineUrl.replace(/\/+$/, '');
   }
 
   /**
-   * Forwards message to Python AI Engine
+   * Forwards message to Python AI Engine with in-memory LRU response caching
    */
   async analyzeMessage(content: string): Promise<any> {
+    const cacheKey = crypto.createHash('sha256').update(content.trim()).digest('hex');
+    const cached = this.messageCache.get(cacheKey);
+    if (cached) {
+      metricsCollector.recordAiCall(0, true);
+      metricsCollector.recordCacheLookup(true);
+      return cached;
+    }
+
+    metricsCollector.recordCacheLookup(false);
+
     const res = await fetchWithTimeout(
       `${this.aiBase}/api/analyze/message`,
       {
@@ -92,13 +108,25 @@ export class AiProxyService {
       throw new Error((errData as any).detail || `AI Engine returned HTTP ${res.status}`);
     }
 
-    return await res.json();
+    const data = await res.json();
+    this.messageCache.set(cacheKey, data);
+    return data;
   }
 
   /**
-   * Forwards URL to Python AI Engine
+   * Forwards URL to Python AI Engine with in-memory LRU response caching
    */
   async analyzeUrl(url: string): Promise<any> {
+    const cacheKey = crypto.createHash('sha256').update(url.trim().toLowerCase()).digest('hex');
+    const cached = this.urlCache.get(cacheKey);
+    if (cached) {
+      metricsCollector.recordAiCall(0, true);
+      metricsCollector.recordCacheLookup(true);
+      return cached;
+    }
+
+    metricsCollector.recordCacheLookup(false);
+
     const res = await fetchWithTimeout(
       `${this.aiBase}/api/analyze/url`,
       {
@@ -115,7 +143,9 @@ export class AiProxyService {
       throw new Error((errData as any).detail || `AI Engine returned HTTP ${res.status}`);
     }
 
-    return await res.json();
+    const data = await res.json();
+    this.urlCache.set(cacheKey, data);
+    return data;
   }
 
   /**

@@ -73,11 +73,13 @@ export function auditLogger(req: Request, res: Response, next: NextFunction): vo
     MetricsCollector.getInstance().recordApiRequest(duration, statusCode);
 
     // 2. Structured API Request Telemetry
+    const requestId = (req as any).id || (req as any).requestId || req.headers['x-request-id'] || null;
     logger.trackApiRequest({
       method,
       endpoint: originalUrl,
       statusCode,
       durationMs: duration,
+      requestId: typeof requestId === 'string' ? requestId : null,
       ipHash: clientIpHash,
       userId: effectiveUserId,
       contentLength: parseInt(res.get('content-length') || '0', 10) || undefined,

@@ -4,6 +4,7 @@ import { scanService } from '../services/scanService';
 import prisma from '../database/client';
 import { config } from '../config';
 import { logger } from '../utils/logger';
+import { metricsCollector } from '../modules/monitoring/metricsCollector';
 
 export interface FileScanJobData {
   type: 'FILE';
@@ -53,6 +54,7 @@ class InMemoryScanQueue implements IScanQueue {
   private readonly maxConcurrency = 5;
 
   async addJob(jobData: ScanJobData): Promise<void> {
+    metricsCollector.recordQueueEnqueued();
     this.queue.push(jobData);
     logger.debug('Enqueued job in local async queue', {
       scanId: jobData.scanId,
@@ -85,6 +87,12 @@ class InMemoryScanQueue implements IScanQueue {
             await scanService.processAiExplanationJob(job.scanId, job.data, job.userId);
           }
         } catch (err) {
+          metricsCollector.recordQueueFailure();
+          logger.trackQueueFailure({
+            scanId: job.scanId,
+            queueType: 'InMemory',
+            error: (err as Error).message,
+          });
           logger.error('Error processing in-memory scan job', { scanId: job.scanId, error: (err as Error).message });
           try {
             await prisma.scan.updateMany({
@@ -144,6 +152,14 @@ class BullScanQueue implements IScanQueue {
     );
 
     this.worker.on('failed', async (job, err) => {
+      metricsCollector.recordQueueFailure();
+      logger.trackQueueFailure({
+        scanId: job?.data?.scanId,
+        jobId: job?.id,
+        queueType: 'BullMQ',
+        error: err.message,
+        attemptsMade: job?.attemptsMade,
+      });
       logger.error('BullMQ job failed', { jobId: job?.id, error: err.message });
       if (job && job.data?.scanId) {
         const maxAttempts = job.opts?.attempts || 1;
@@ -169,6 +185,7 @@ class BullScanQueue implements IScanQueue {
   }
 
   async addJob(jobData: ScanJobData): Promise<void> {
+    metricsCollector.recordQueueEnqueued();
     await this.queue.add(`scan-${jobData.type.toLowerCase()}`, jobData, {
       attempts: 2,
       backoff: { type: 'exponential', delay: 2000 },

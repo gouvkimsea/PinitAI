@@ -1,4 +1,5 @@
 import { DetectionItem } from '../../types';
+import { messageScamEngine } from '../message/messageScamEngine';
 
 export type TextSeverity = 'safe' | 'low' | 'medium' | 'high' | 'critical' | 'needs_review';
 
@@ -306,6 +307,98 @@ const RULES: PatternRule[] = [
     weight: 25,
     regex: /(ចុចទីនេះ|ចុចលើតំណភ្ជាប់|បើក link|ចុច link ខាងក្រោម|ចុចដើម្បីផ្ទៀងផ្ទាត់)/u,
   },
+
+  // 13. Fake Deliveries & Package Smishing
+  {
+    id: 'TXT-DELIV-01',
+    patternName: 'Fake deliveries',
+    category: 'delivery',
+    title: 'Deceptive Package Delivery Smishing Lure',
+    description: 'Falsely claims an undelivered parcel or unpaid customs clearance fees.',
+    severity: 'high',
+    weight: 30,
+    regex: /\b(package delivery failed|unable to deliver your package|customs clearance pending|unpaid customs fee|shipment on hold|update your delivery address|postal service notice|dhl delivery|fedex notice)\b/i,
+  },
+  {
+    id: 'TXT-DELIV-KM-01',
+    patternName: 'Fake deliveries',
+    category: 'delivery',
+    title: 'Package Delivery Smishing (Khmer)',
+    description: 'Fake parcel delivery or customs alerts in Khmer.',
+    severity: 'high',
+    weight: 30,
+    regex: /(កញ្ចប់អីវ៉ាន់|មិនអាចដឹកជញ្ជូន|ជាប់គយ|បង់ថ្លៃដឹកជញ្ជូន|កែសម្រួលអាសយដ្ឋាន)/u,
+  },
+
+  // 14. Fake Loans & Predatory Instant Credit
+  {
+    id: 'TXT-LOAN-01',
+    patternName: 'Fake loans',
+    category: 'loan',
+    title: 'Unsecured Instant Loan Lure',
+    description: 'Offers instant, collateral-free loans with zero credit check to extract advance fees.',
+    severity: 'critical',
+    weight: 35,
+    regex: /\b(instant loan|pre-approved loan|loan approval|no collateral loan|emergency loan approved|zero credit check loan|borrow up to \$?\d+|fast cash disbursement)\b/i,
+  },
+  {
+    id: 'TXT-LOAN-KM-01',
+    patternName: 'Fake loans',
+    category: 'loan',
+    title: 'Fake Instant Loan (Khmer)',
+    description: 'Offers collateral-free fast loans in Khmer.',
+    severity: 'critical',
+    weight: 35,
+    regex: /(កម្ចីរហ័ស|កម្ចីគ្មានទ្រព្យបញ្ចាំ|អនុម័តប្រាក់កម្ចី|កម្ចីបន្ទាន់|ខ្ចីប្រាក់រហ័ស|ការប្រាក់ទាប)/u,
+  },
+
+  // 15. Fake Customer Support & Service Desk Imposter
+  {
+    id: 'TXT-SPT-01',
+    patternName: 'Fake customer support',
+    category: 'support',
+    title: 'Customer Support Representative Impersonation',
+    description: 'Pretends to be tech support, Telegram Help Desk, or Meta security agents.',
+    severity: 'high',
+    weight: 30,
+    regex: /\b(customer support representative|support team|help desk agent|telegram support|whatsapp support|meta support|apple support team)\b/i,
+  },
+
+  // 16. Remote Access Requests
+  {
+    id: 'TXT-RMT-01',
+    patternName: 'Remote access requests',
+    category: 'remote_access',
+    title: 'Remote Desktop Tool Installation Solicitation',
+    description: 'Urges the victim to install AnyDesk, TeamViewer, or QuickSupport.',
+    severity: 'critical',
+    weight: 40,
+    regex: /\b(install anydesk|download teamviewer|install quicksupport|ultraviewer|grant remote access|allow screen sharing)\b/i,
+  },
+
+  // 17. Advance-Fee Requests
+  {
+    id: 'TXT-ADV-01',
+    patternName: 'Advance-fee requests',
+    category: 'advance_fee',
+    title: 'Upfront Fee or Clearance Charge Demand',
+    description: 'Requires paying an upfront deposit or processing fee before releasing promised funds.',
+    severity: 'critical',
+    weight: 35,
+    regex: /\b(pay (?:upfront|deposit|processing fee|clearance fee|release fee|activation fee)|advance deposit required|fee must be paid first)\b/i,
+  },
+
+  // 18. Requests to Move Off-Platform
+  {
+    id: 'TXT-MOV-01',
+    patternName: 'Requests to move conversation to another platform',
+    category: 'off_platform',
+    title: 'Off-Platform Messenger Diversion',
+    description: 'Attempts to divert communication to external private channels like WhatsApp or Telegram.',
+    severity: 'high',
+    weight: 25,
+    regex: /\b(chat on (?:whatsapp|telegram|line)|add my (?:whatsapp|telegram|line)|message me on (?:whatsapp|telegram|line)|join (?:my|the) telegram (?:group|channel))\b/i,
+  },
 ];
 
 export class TextDetector {
@@ -357,6 +450,8 @@ export class TextDetector {
       PAYMENT_SCAM: 0,
       ACCOUNT_TAKEOVER: 0,
       SOCIAL_ENGINEERING: 0,
+      DELIVERY_SCAM: 0,
+      LOAN_SCAM: 0,
     };
 
     let totalWeight = 0;
@@ -422,6 +517,28 @@ export class TextDetector {
           case 'Requests to click suspicious links':
             categoryScores.PHISHING += rule.weight;
             break;
+          case 'Fake deliveries':
+            categoryScores.DELIVERY_SCAM += rule.weight;
+            categoryScores.PHISHING += Math.round(rule.weight * 0.8);
+            break;
+          case 'Fake loans':
+            categoryScores.LOAN_SCAM += rule.weight;
+            categoryScores.PAYMENT_SCAM += Math.round(rule.weight * 0.8);
+            break;
+          case 'Fake customer support':
+            categoryScores.IMPERSONATION += rule.weight;
+            categoryScores.PHISHING += Math.round(rule.weight * 0.7);
+            break;
+          case 'Remote access requests':
+            categoryScores.ACCOUNT_TAKEOVER += rule.weight;
+            categoryScores.PHISHING += rule.weight;
+            break;
+          case 'Advance-fee requests':
+            categoryScores.PAYMENT_SCAM += rule.weight;
+            break;
+          case 'Requests to move conversation to another platform':
+            categoryScores.SOCIAL_ENGINEERING += rule.weight;
+            break;
         }
       }
     }
@@ -435,6 +552,8 @@ export class TextDetector {
       'ACCOUNT_TAKEOVER',
       'PAYMENT_SCAM',
       'IMPERSONATION',
+      'DELIVERY_SCAM',
+      'LOAN_SCAM',
     ];
 
     let topCategory = 'SAFE';
@@ -470,6 +589,10 @@ export class TextDetector {
       'Requests for passwords or OTPs',
       'Account takeover attempts',
       'Suspicious payment instructions',
+      'Fake deliveries',
+      'Fake loans',
+      'Remote access requests',
+      'Advance-fee requests',
     ]);
 
     const hasDefinitiveScamPattern = Array.from(detectedPatterns).some((p) => DEFINITIVE_SCAM_PATTERNS.has(p));
@@ -477,7 +600,7 @@ export class TextDetector {
     // A message is uncertain ("needs_review") when it has isolated, ambiguous indicators
     // (such as isolated urgency or a benign inquiry) without a definitive scam family.
     const isUncertain = !hasDefinitiveScamPattern && (
-      (detectedPatterns.size === 1 && (detectedPatterns.has('Urgency') || detectedPatterns.has('Requests to click suspicious links'))) ||
+      (detectedPatterns.size === 1 && (detectedPatterns.has('Urgency') || detectedPatterns.has('Requests to click suspicious links') || detectedPatterns.has('Requests to move conversation to another platform'))) ||
       (rawScore <= 40 && criticalRuleCount === 0 && (topCategory === 'SOCIAL_ENGINEERING' || topCategory === 'SAFE'))
     );
 
@@ -602,6 +725,14 @@ export class TextDetector {
       structured: res.structured,
     };
   }
+
+  /**
+   * Evaluates text using the dedicated Message Scam Detection Engine
+   */
+  analyzeMessage(text: string) {
+    return messageScamEngine.analyze(text);
+  }
 }
 
 export const textDetector = new TextDetector();
+

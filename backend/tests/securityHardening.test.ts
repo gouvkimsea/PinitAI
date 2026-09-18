@@ -63,6 +63,21 @@ describe('Security Hardening Pass Tests', () => {
       const publicUrl = await validateUrlForSsrf('https://www.google.com/search?q=test');
       expect(publicUrl.isSafe).toBe(true);
     });
+    it('should block octal-encoded IP addresses (e.g. 0177.0.0.1 = 127.0.0.1)', async () => {
+      const res = await validateUrlForSsrf('http://0177.0.0.1/');
+      expect(res.isSafe).toBe(false);
+      expect(res.blockedReason).toMatch(/octal|internal|ssrf/i);
+    });
+
+    it('should block internal infrastructure TLDs (.internal, .corp, .lan, .cluster.local)', async () => {
+      const internalRes = await validateUrlForSsrf('http://database.internal/query');
+      expect(internalRes.isSafe).toBe(false);
+      expect(internalRes.blockedReason).toMatch(/internal|ssrf/i);
+
+      const k8sRes = await validateUrlForSsrf('http://kubernetes.default.svc.cluster.local');
+      expect(k8sRes.isSafe).toBe(false);
+      expect(k8sRes.blockedReason).toMatch(/internal|ssrf/i);
+    });
   });
 
   describe('Administrative Route Protection (BOLA/Authorization)', () => {
@@ -82,6 +97,14 @@ describe('Security Hardening Pass Tests', () => {
       const res = await request(app).get('/api/admin/dataset');
       expect(res.status).toBe(401);
       expect(res.body.error).toBeDefined();
+    });
+
+    it('should reject non-admin access to intelligence rule test endpoints', async () => {
+      const res1 = await request(app).post('/api/intelligence/rules/RULE-PHISH-001/test');
+      expect([401, 403]).toContain(res1.status);
+
+      const res2 = await request(app).post('/api/intelligence/rules/test-all');
+      expect([401, 403]).toContain(res2.status);
     });
   });
 

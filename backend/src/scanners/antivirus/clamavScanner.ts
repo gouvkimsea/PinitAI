@@ -3,6 +3,7 @@ import fs from 'fs';
 import { DetectionItem } from '../../types';
 import { logger } from '../../utils/logger';
 import { config } from '../../config';
+import { clamAvCircuitBreaker } from '../../modules/ai/circuitBreaker';
 
 export interface AntivirusScanResult {
   engine: 'ClamAV' | 'ClamAV-Simulated';
@@ -32,33 +33,39 @@ const FALLBACK_SIGNATURES: Array<{ signature: string | RegExp; virusName: string
 export async function scanWithClamAV(filePath: string): Promise<AntivirusScanResult> {
   const detections: DetectionItem[] = [];
 
-  try {
-    const clamResult = await streamToClamAV(filePath, config.clamav.host, config.clamav.port, config.clamav.timeoutMs);
-    if (clamResult.isInfected) {
-      detections.push({
+  // If ClamAV circuit breaker is OPEN, skip socket attempt and use fallback signatures immediately
+  if (!clamAvCircuitBreaker.isOpen()) {
+    try {
+      const clamResult = await streamToClamAV(filePath, config.clamav.host, config.clamav.port, config.clamav.timeoutMs);
+      clamAvCircuitBreaker.recordSuccess();
+      if (clamResult.isInfected) {
+        detections.push({
+          engine: 'ClamAV',
+          category: 'virus_detection',
+          severity: 'critical',
+          ruleId: 'CLAM-001',
+          title: `Malware Detected by ClamAV: ${clamResult.virusName || 'Unknown Threat'}`,
+          description: `ClamAV signature database matched a known malicious signature: ${clamResult.virusName}.`,
+          details: { virusName: clamResult.virusName, engine: 'ClamAV' },
+        });
+      }
+
+      return {
         engine: 'ClamAV',
-        category: 'virus_detection',
-        severity: 'critical',
-        ruleId: 'CLAM-001',
-        title: `Malware Detected by ClamAV: ${clamResult.virusName || 'Unknown Threat'}`,
-        description: `ClamAV signature database matched a known malicious signature: ${clamResult.virusName}.`,
-        details: { virusName: clamResult.virusName, engine: 'ClamAV' },
+        isInfected: clamResult.isInfected,
+        virusName: clamResult.virusName,
+        isEngineReachable: true,
+        detections,
+      };
+    } catch (err) {
+      clamAvCircuitBreaker.recordFailure((err as Error).message);
+      logger.debug('ClamAV daemon not reachable or timed out. Falling back to built-in signature engine.', {
+        host: config.clamav.host,
+        port: config.clamav.port,
+        error: (err as Error).message,
       });
     }
-
-    return {
-      engine: 'ClamAV',
-      isInfected: clamResult.isInfected,
-      virusName: clamResult.virusName,
-      isEngineReachable: true,
-      detections,
-    };
-  } catch (err) {
-    logger.debug('ClamAV daemon not reachable or timed out. Falling back to built-in signature engine.', {
-      host: config.clamav.host,
-      port: config.clamav.port,
-      error: (err as Error).message,
-    });
+  }
 
     // Fallback signature scan
     const fallbackResult = await scanWithFallbackSignatures(filePath);
@@ -81,7 +88,6 @@ export async function scanWithClamAV(filePath: string): Promise<AntivirusScanRes
       isEngineReachable: false,
       detections,
     };
-  }
 }
 
 /**

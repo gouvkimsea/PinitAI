@@ -291,34 +291,53 @@ export class AiProxyController {
   /**
    * GET /api/v1/admin/dataset
    */
-  async getAdminDataset(_req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+  async getAdminDataset(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
+      const page = Math.max(1, parseInt(req.query.page as string, 10) || 1);
+      const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string, 10) || 20));
+      const skip = (page - 1) * limit;
+
       try {
-        const aiRes = await fetch(`${this.aiBase}/api/admin/dataset`, {
+        const aiRes = await fetch(`${this.aiBase}/api/admin/dataset?page=${page}&limit=${limit}`, {
           headers: {
             'X-Admin-Key': config.adminApiKey,
           },
         });
         if (aiRes.ok) {
-          const data = await aiRes.json();
-          res.status(aiRes.status).json(data);
+          const data: any = await aiRes.json();
+          const items = Array.isArray(data) ? data : data.items || [];
+          const total = data.total ?? (Array.isArray(data) ? data.length : items.length);
+          res.status(200).json({
+            success: true,
+            items,
+            pagination: data.pagination || {
+              page,
+              limit,
+              total,
+              total_pages: Math.ceil(total / limit),
+            },
+          });
           return;
         }
       } catch (aiErr) {
         logger.warn('AI Engine offline for admin dataset, reading samples from database', { error: (aiErr as Error).message });
       }
 
-      const recentScans = await prisma.scan.findMany({
-        take: 20,
-        orderBy: { createdAt: 'desc' },
-        select: {
-          id: true,
-          target: true,
-          type: true,
-          riskScore: true,
-          riskLevel: true,
-        },
-      });
+      const [totalCount, recentScans] = await Promise.all([
+        prisma.scan.count(),
+        prisma.scan.findMany({
+          skip,
+          take: limit,
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            target: true,
+            type: true,
+            riskScore: true,
+            riskLevel: true,
+          },
+        }),
+      ]);
 
       const items = recentScans.map((s, idx) => ({
         id: s.id,
@@ -329,7 +348,16 @@ export class AiProxyController {
         verified: idx % 2 === 0,
       }));
 
-      res.status(200).json({ items });
+      res.status(200).json({
+        success: true,
+        items,
+        pagination: {
+          total: totalCount,
+          page,
+          limit,
+          total_pages: Math.ceil(totalCount / limit),
+        },
+      });
     } catch (err) {
       next(err);
     }

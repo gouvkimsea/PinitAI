@@ -61,7 +61,13 @@ export class ReportController {
           skip,
           take: limit,
           orderBy: { createdAt: 'desc' },
-          include: {
+          select: {
+            id: true,
+            scamType: true,
+            target: true,
+            description: true,
+            status: true,
+            createdAt: true,
             user: {
               select: { id: true, email: true },
             },

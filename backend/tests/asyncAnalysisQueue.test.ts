@@ -42,7 +42,9 @@ describe('Asynchronous Analysis Queue & Job Architecture Tests', () => {
       let completed = false;
       for (let i = 0; i < 20; i++) {
         await new Promise((resolve) => setTimeout(resolve, 300));
-        const checkRes = await request(app).get(`/api/analysis/${jobId}`);
+        const checkRes = await request(app)
+          .get(`/api/analysis/${jobId}`)
+          .set('Authorization', `Bearer ${authToken}`);
         expect(checkRes.status).toBe(200);
         expect(checkRes.body.job_id).toBe(jobId);
 

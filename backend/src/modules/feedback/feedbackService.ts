@@ -2,6 +2,7 @@ import prisma from '../../database/client';
 import { aiProxyService } from '../ai/aiProxyService';
 import { logger } from '../../utils/logger';
 import { feedbackRepository, CreateFeedbackDTO } from './feedbackRepository';
+import { metricsCollector } from '../monitoring/metricsCollector';
 
 export type FeedbackType = 'correct_detection' | 'incorrect_detection' | 'report_scam' | 'not_sure';
 
@@ -114,6 +115,17 @@ export class FeedbackService {
     };
 
     const record = await feedbackRepository.create(createDTO);
+
+    // Record reliability metrics
+    if (feedback_type === 'incorrect_detection') {
+      if ((dto.risk_score_at_time ?? 0) >= 50) {
+        metricsCollector.recordFalsePositive();
+      } else {
+        metricsCollector.recordFalseNegative();
+      }
+    } else if (feedback_type === 'report_scam') {
+      metricsCollector.recordFalseNegative();
+    }
 
     // ── For report_scam: create a staged ScamReport ──────────────────────────
     // This writes to scam_reports (community staging), NOT scam_patterns.

@@ -82,16 +82,31 @@ export class ExplanationEngine {
       unverified_claims_filtered: 0,
     };
 
-    // ── STEP 2: Attempt Gemini LLM explanation ────────────────────────────────────────────
+    // ── STEP 2: Attempt Gemini LLM explanation (Optimization 14: Limit AI calls when deterministic evidence is conclusive)
     let aiResult: Partial<AiStructuredExplanation> | null = null;
-    try {
-      aiResult = await geminiExplainer.explain(ctx, verifiedSignals);
-    } catch (err) {
-      // Defensive: geminiExplainer already handles errors internally, but catch any leaks
-      logger.warn('Unexpected error from GeminiExplainer — using rules engine fallback', {
-        error: (err as Error).message,
+
+    const isConclusiveClean = ctx.threatLevel === 'SAFE' && (!ctx.indicators || ctx.indicators.length === 0) && (ctx.confidenceScore ?? 0) >= 85;
+    const isConclusiveMalicious = ((ctx.threatLevel as string) === 'CRITICAL' || ctx.threatLevel === 'MALICIOUS') && (ctx.confidenceScore ?? 0) >= 90 && verifiedSignals.length >= 2;
+    const hasConclusiveEvidence = isConclusiveClean || isConclusiveMalicious;
+
+    if (hasConclusiveEvidence && !(ctx as any).forceAiExplanation) {
+      metricsCollector.recordAiCall(0, true);
+      logger.debug('Deterministic analysis provided conclusive evidence; limiting redundant LLM call', {
+        threatLevel: ctx.threatLevel,
+        confidenceScore: ctx.confidenceScore,
+        signalCount: verifiedSignals.length,
       });
       aiResult = null;
+    } else {
+      try {
+        aiResult = await geminiExplainer.explain(ctx, verifiedSignals);
+      } catch (err) {
+        // Defensive: geminiExplainer already handles errors internally, but catch any leaks
+        logger.warn('Unexpected error from GeminiExplainer — using rules engine fallback', {
+          error: (err as Error).message,
+        });
+        aiResult = null;
+      }
     }
 
     // ── STEP 3: Compose final result ──────────────────────────────────────────────────────

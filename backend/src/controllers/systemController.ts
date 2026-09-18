@@ -261,6 +261,7 @@ export class SystemController {
 
   async getPerformanceMetrics(_req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
+      res.setHeader('Cache-Control', 'public, max-age=2, stale-while-revalidate=5');
       const summary = metricsCollector.getSummary();
       const performanceMetrics = {
         api_response_time: {
@@ -279,8 +280,20 @@ export class SystemController {
         database_queries: summary.database,
         url_analysis: summary.url_analysis,
         file_processing: summary.file_processing,
+        external_api: summary.external_api,
+        external_api_latency: summary.external_api,
+        concurrency: summary.concurrency,
+        concurrent_requests: summary.concurrency,
+        cache: summary.cache,
+        cache_hit_rate: summary.cache,
         memory: summary.memory,
         cpu: summary.cpu,
+        scans: summary.scans,
+        feedback: summary.feedback,
+        queue: summary.queue,
+        alerts: metricsCollector.evaluateThresholdAlerts(),
+        error_rate_pct: summary.api.error_rate_percent,
+        timeout_rate_pct: summary.api.timeout_rate_percent,
       };
 
       res.status(200).json({
@@ -293,6 +306,13 @@ export class SystemController {
           api_response_time: performanceMetrics.api_response_time,
           ai_latency: performanceMetrics.ai_latency,
           database_queries: performanceMetrics.database_queries,
+          external_api_latency: performanceMetrics.external_api,
+          concurrent_requests: performanceMetrics.concurrency,
+          cache_hit_rate: performanceMetrics.cache,
+          scans: summary.scans,
+          feedback: summary.feedback,
+          queue: summary.queue,
+          alerts: performanceMetrics.alerts,
         },
         data: performanceMetrics,
       });

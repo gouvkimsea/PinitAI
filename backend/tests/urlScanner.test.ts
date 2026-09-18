@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { normalizeUrl, analyzeUrl } from '../src/scanners/url/urlScanner';
 
-describe('URL Security Scanner', () => {
+describe('URL Security Scanner', { timeout: 15000 }, () => {
   it('should normalize URLs properly', () => {
     expect(normalizeUrl('example.com')).toBe('https://example.com');
     expect(normalizeUrl('HTTP://EXAMPLE.COM:80/')).toBe('http://example.com');

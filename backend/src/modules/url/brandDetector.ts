@@ -1,47 +1,103 @@
 import { BrandImpersonationMatch } from './types';
+import { urlNormalizer } from './urlNormalizer';
 
 export interface TargetBrandConfig {
   key: string;
   name: string;
-  category: 'banking' | 'tech' | 'crypto' | 'shipping' | 'social';
+  category: 'banking' | 'government' | 'shipping' | 'tech' | 'crypto' | 'social';
   legitimateDomains: string[];
   keywords?: string[];
 }
 
 export const TARGET_BRANDS: TargetBrandConfig[] = [
-  // Banking & FinTech
-  {
-    key: 'paypal',
-    name: 'PayPal',
-    category: 'banking',
-    legitimateDomains: ['paypal.com', 'paypal.me'],
-  },
+  // 1. Cambodian Financial Institutions & Banks
   {
     key: 'ababank',
     name: 'ABA Bank',
     category: 'banking',
     legitimateDomains: ['ababank.com', 'ababank.com.kh'],
-    keywords: ['aba'],
-  },
-  {
-    key: 'acleda',
-    name: 'ACLEDA Bank',
-    category: 'banking',
-    legitimateDomains: ['acledabank.com.kh', 'acledabank.com'],
+    keywords: ['aba', 'ababank'],
   },
   {
     key: 'wingbank',
     name: 'Wing Bank',
     category: 'banking',
     legitimateDomains: ['wingmoney.com', 'wingbank.com.kh'],
-    keywords: ['wing'],
+    keywords: ['wing', 'wingbank', 'wingmoney'],
+  },
+  {
+    key: 'acleda',
+    name: 'ACLEDA Bank',
+    category: 'banking',
+    legitimateDomains: ['acledabank.com.kh', 'acledabank.com'],
+    keywords: ['acleda', 'acledabank'],
   },
   {
     key: 'canadiabank',
     name: 'Canadia Bank',
     category: 'banking',
     legitimateDomains: ['canadiabank.com.kh', 'canadiabank.com'],
-    keywords: ['canadia'],
+    keywords: ['canadia', 'canadiabank'],
+  },
+  {
+    key: 'sathapana',
+    name: 'Sathapana Bank',
+    category: 'banking',
+    legitimateDomains: ['sathapana.com.kh'],
+    keywords: ['sathapana'],
+  },
+  {
+    key: 'princebank',
+    name: 'Prince Bank',
+    category: 'banking',
+    legitimateDomains: ['princebank.com.kh'],
+    keywords: ['princebank'],
+  },
+  {
+    key: 'bakong',
+    name: 'NBC / Bakong',
+    category: 'banking',
+    legitimateDomains: ['bakong.nbc.gov.kh', 'nbc.gov.kh', 'nbc.org.kh'],
+    keywords: ['bakong', 'nbc'],
+  },
+  {
+    key: 'pipay',
+    name: 'Pi Pay',
+    category: 'banking',
+    legitimateDomains: ['pipay.com'],
+    keywords: ['pipay'],
+  },
+
+  // 2. Cambodian Government, Utilities & Institutions
+  {
+    key: 'gdt',
+    name: 'General Department of Taxation (GDT)',
+    category: 'government',
+    legitimateDomains: ['tax.gov.kh'],
+    keywords: ['gdt', 'taxgov', 'taxationkh'],
+  },
+  {
+    key: 'cambodiapost',
+    name: 'Cambodia Post',
+    category: 'shipping',
+    legitimateDomains: ['cambodiapost.post', 'cambodiapost.com.kh'],
+    keywords: ['cambodiapost', 'campost'],
+  },
+  {
+    key: 'policekh',
+    name: 'Cambodian National Police',
+    category: 'government',
+    legitimateDomains: ['police.gov.kh'],
+    keywords: ['nationalpolice', 'cambodianpolice'],
+  },
+
+  // 3. Global Banking & FinTech
+  {
+    key: 'paypal',
+    name: 'PayPal',
+    category: 'banking',
+    legitimateDomains: ['paypal.com', 'paypal.me'],
+    keywords: ['paypal'],
   },
   {
     key: 'chase',
@@ -75,7 +131,37 @@ export const TARGET_BRANDS: TargetBrandConfig[] = [
     legitimateDomains: ['revolut.com'],
   },
 
-  // Big Tech & Cloud
+  // 4. Shipping & Logistics
+  {
+    key: 'dhl',
+    name: 'DHL Express',
+    category: 'shipping',
+    legitimateDomains: ['dhl.com', 'dhl.com.kh'],
+    keywords: ['dhl'],
+  },
+  {
+    key: 'fedex',
+    name: 'FedEx',
+    category: 'shipping',
+    legitimateDomains: ['fedex.com'],
+    keywords: ['fedex'],
+  },
+  {
+    key: 'ups',
+    name: 'UPS',
+    category: 'shipping',
+    legitimateDomains: ['ups.com'],
+    keywords: ['ups'],
+  },
+  {
+    key: 'jtexpress',
+    name: 'J&T Express',
+    category: 'shipping',
+    legitimateDomains: ['jtexpress.com.kh', 'jtexpress.com'],
+    keywords: ['jtexpress'],
+  },
+
+  // 5. Big Tech & Cloud
   {
     key: 'apple',
     name: 'Apple',
@@ -86,7 +172,7 @@ export const TARGET_BRANDS: TargetBrandConfig[] = [
     key: 'google',
     name: 'Google',
     category: 'tech',
-    legitimateDomains: ['google.com', 'gmail.com', 'accounts.google.com'],
+    legitimateDomains: ['google.com', 'google.com.kh', 'gmail.com', 'accounts.google.com'],
   },
   {
     key: 'microsoft',
@@ -107,12 +193,12 @@ export const TARGET_BRANDS: TargetBrandConfig[] = [
     legitimateDomains: ['amazon.com', 'aws.amazon.com'],
   },
 
-  // Social & Messaging
+  // 6. Social & Messaging
   {
     key: 'facebook',
-    name: 'Facebook',
+    name: 'Facebook / Meta',
     category: 'social',
-    legitimateDomains: ['facebook.com', 'fb.com'],
+    legitimateDomains: ['facebook.com', 'fb.com', 'meta.com'],
   },
   {
     key: 'instagram',
@@ -130,10 +216,10 @@ export const TARGET_BRANDS: TargetBrandConfig[] = [
     key: 'whatsapp',
     name: 'WhatsApp',
     category: 'social',
-    legitimateDomains: ['whatsapp.com'],
+    legitimateDomains: ['whatsapp.com', 'wa.me'],
   },
 
-  // Crypto & Web3
+  // 7. Crypto & Web3
   {
     key: 'binance',
     name: 'Binance',
@@ -164,26 +250,6 @@ export const TARGET_BRANDS: TargetBrandConfig[] = [
     category: 'crypto',
     legitimateDomains: ['ledger.com'],
   },
-
-  // Shipping & Logistics
-  {
-    key: 'dhl',
-    name: 'DHL Express',
-    category: 'shipping',
-    legitimateDomains: ['dhl.com'],
-  },
-  {
-    key: 'fedex',
-    name: 'FedEx',
-    category: 'shipping',
-    legitimateDomains: ['fedex.com'],
-  },
-  {
-    key: 'usps',
-    name: 'USPS',
-    category: 'shipping',
-    legitimateDomains: ['usps.com'],
-  },
 ];
 
 const COMPOUND_CCTLDS = new Set([
@@ -196,6 +262,14 @@ const COMPOUND_CCTLDS = new Set([
   'com.br', 'net.br', 'org.br',
   'com.mx', 'org.mx', 'gob.mx',
 ]);
+
+const COMBISQUATTING_KEYWORDS = [
+  'security', 'secure', 'login', 'signin', 'verify', 'verification', 'update',
+  'support', 'service', 'account', 'portal', 'alert', 'auth', 'recovery', 'help',
+  'online', 'banking', 'wallet', 'claim', 'gift', 'pay', 'center', 'team',
+  'parcel', 'delivery', 'tracking', 'package', 'customs', 'fee', 'branch',
+  'khqr', 'mobile', 'app', 'download', 'statement', 'confirm', 'customer', 'post'
+];
 
 /**
  * Computes the Levenshtein edit distance between two strings.
@@ -295,7 +369,7 @@ export function extractDomainParts(hostname: string): {
  */
 export function isLegitimateBrandDomain(hostname: string, brand: TargetBrandConfig): boolean {
   const cleanHost = hostname.toLowerCase().trim();
-  const { baseDomain } = extractDomainParts(cleanHost);
+  const { baseDomain, sld } = extractDomainParts(cleanHost);
 
   for (const legit of brand.legitimateDomains) {
     if (baseDomain === legit || cleanHost === legit || cleanHost.endsWith(`.${legit}`)) {
@@ -303,13 +377,13 @@ export function isLegitimateBrandDomain(hostname: string, brand: TargetBrandConf
     }
   }
 
-  // Also support legitimate country extensions e.g. paypal.co.uk, amazon.de, google.com.kh
-  const sld = extractDomainParts(cleanHost).sld;
-  if (sld === brand.key) {
-    // If the registered SLD matches brand exactly and legit domains include standard .com
-    const standardCom = `${brand.key}.com`;
-    if (brand.legitimateDomains.includes(standardCom)) {
-      return true;
+  // Support legitimate ccTLD country branches (e.g. google.com.kh, paypal.co.uk)
+  const brandKeys = [brand.key, ...(brand.keywords || [])];
+  for (const bKey of brandKeys) {
+    if (sld === bKey) {
+      if (brand.legitimateDomains.some((d) => d.includes(bKey))) {
+        return true;
+      }
     }
   }
 
@@ -317,7 +391,7 @@ export function isLegitimateBrandDomain(hostname: string, brand: TargetBrandConf
 }
 
 /**
- * Performs algorithmic brand impersonation and typosquatting analysis.
+ * Performs algorithmic brand impersonation, lookalike, and typosquatting analysis.
  */
 export function detectBrandImpersonation(hostname: string): BrandImpersonationMatch {
   const cleanHost = hostname.toLowerCase().trim();
@@ -330,6 +404,7 @@ export function detectBrandImpersonation(hostname: string): BrandImpersonationMa
         return {
           detected: true,
           targetedBrand: brand.name,
+          category: brand.category,
           impersonationType: 'homoglyph',
           matchedHostname: cleanHost,
           baseDomain,
@@ -349,8 +424,29 @@ export function detectBrandImpersonation(hostname: string): BrandImpersonationMa
     };
   }
 
-  for (const brand of TARGET_BRANDS) {
-    // If this is legitimate domain of the brand, skip
+  // 2. Homoglyph mapping on Unicode/Latin characters
+  const homoglyphMapped = urlNormalizer.mapHomoglyphs(cleanHost);
+  if (homoglyphMapped !== cleanHost) {
+    for (const brand of TARGET_BRANDS) {
+      if (homoglyphMapped.includes(brand.key) && !isLegitimateBrandDomain(cleanHost, brand)) {
+        return {
+          detected: true,
+          targetedBrand: brand.name,
+          category: brand.category,
+          impersonationType: 'homoglyph',
+          matchedHostname: cleanHost,
+          baseDomain,
+          similarityScore: 96,
+          description: `Mixed-script homoglyph substitution detected: '${cleanHost}' visually impersonates '${brand.name}'.`,
+        };
+      }
+    }
+  }
+
+  // Sort brands so longer/more specific brand keys match first (e.g. 'acledabank' or 'canadiabank' before 'aba')
+  const sortedBrands = [...TARGET_BRANDS].sort((a, b) => b.key.length - a.key.length);
+
+  for (const brand of sortedBrands) {
     if (isLegitimateBrandDomain(cleanHost, brand)) {
       continue;
     }
@@ -358,8 +454,14 @@ export function detectBrandImpersonation(hostname: string): BrandImpersonationMa
     const brandKeys = [brand.key, ...(brand.keywords || [])];
 
     for (const bKey of brandKeys) {
-      // 2. Subdomain Spoofing / Brand Injection
-      // e.g. paypal.com.verify-user.attacker.com or chase.secure-login.xyz
+      // Create precise boundary matcher for short keys (<= 3 chars, e.g. 'aba', 'nbc', 'gdt', 'ups')
+      // to avoid matching 'aba' inside 'acledabank' or 'canadiabank'
+      const isShortKey = bKey.length <= 3;
+      const bKeyBoundaryRegex = isShortKey
+        ? new RegExp(`(^|[-_.0-9])${bKey}([-_.0-9]|$)`, 'i')
+        : new RegExp(bKey, 'i');
+
+      // 3. Subdomain Spoofing / Brand Injection
       const brandInSubdomain = subdomains.some(
         (sub) => sub === bKey || sub === `${bKey}.com` || sub.startsWith(`${bKey}-`) || sub.endsWith(`-${bKey}`)
       );
@@ -367,6 +469,7 @@ export function detectBrandImpersonation(hostname: string): BrandImpersonationMa
         return {
           detected: true,
           targetedBrand: brand.name,
+          category: brand.category,
           impersonationType: 'subdomain_spoof',
           matchedHostname: cleanHost,
           baseDomain,
@@ -375,11 +478,11 @@ export function detectBrandImpersonation(hostname: string): BrandImpersonationMa
         };
       }
 
-      // Also check if full hostname contains the brand but the base domain is completely different
-      if (cleanHost.includes(bKey) && !baseDomain.includes(bKey)) {
+      if (bKeyBoundaryRegex.test(cleanHost) && !bKeyBoundaryRegex.test(baseDomain)) {
         return {
           detected: true,
           targetedBrand: brand.name,
+          category: brand.category,
           impersonationType: 'subdomain_spoof',
           matchedHostname: cleanHost,
           baseDomain,
@@ -388,16 +491,10 @@ export function detectBrandImpersonation(hostname: string): BrandImpersonationMa
         };
       }
 
-      // 3. Combisquatting (Brand paired with security/action keywords in base domain SLD)
-      // e.g. paypal-security.com, login-apple.com, binance-wallet.com
-      const COMBISQUATTING_KEYWORDS = [
-        'security', 'secure', 'login', 'signin', 'verify', 'verification', 'update',
-        'support', 'service', 'account', 'portal', 'alert', 'auth', 'recovery', 'help',
-        'online', 'banking', 'wallet', 'claim', 'gift', 'pay', 'center', 'team'
-      ];
-
+      // 4. Combisquatting (Brand paired with action/security keywords in base domain SLD)
+      const hasBrandInSld = isShortKey ? bKeyBoundaryRegex.test(sld) : sld.includes(bKey);
       const hasCombisquattingPattern =
-        sld.includes(bKey) &&
+        hasBrandInSld &&
         sld !== bKey &&
         (sld.includes('-') || COMBISQUATTING_KEYWORDS.some((kw) => sld.includes(kw)));
 
@@ -405,6 +502,7 @@ export function detectBrandImpersonation(hostname: string): BrandImpersonationMa
         return {
           detected: true,
           targetedBrand: brand.name,
+          category: brand.category,
           impersonationType: 'combisquatting',
           matchedHostname: cleanHost,
           baseDomain,
@@ -413,17 +511,37 @@ export function detectBrandImpersonation(hostname: string): BrandImpersonationMa
         };
       }
 
-      // 4. Typosquatting (Levenshtein Edit Distance)
-      // Check both the entire SLD and individual tokens within hyphenated SLDs (e.g. paypa1, paypa1-account-update)
+      // 5. Visual Lookalike Transliteration Check
       const tokensToCheck = Array.from(new Set([sld, ...sld.split(/[-_.]/).filter(Boolean)]));
 
       for (const tok of tokensToCheck) {
+        const looksLikePaypal = tok === 'paypai' || tok === 'paypa1';
+        const looksLikeAmazon = tok.replace(/rn/g, 'm') === 'amazon';
+        const looksLikeWhatsapp = tok.replace(/vv/g, 'w') === 'whatsapp';
+        const looksLikeGoogle = tok === 'googic' || tok === 'g00gle';
+
+        if ((looksLikePaypal && bKey === 'paypal') ||
+            (looksLikeAmazon && bKey === 'amazon') ||
+            (looksLikeWhatsapp && bKey === 'whatsapp') ||
+            (looksLikeGoogle && bKey === 'google')) {
+          return {
+            detected: true,
+            targetedBrand: brand.name,
+            category: brand.category,
+            impersonationType: 'typosquatting',
+            matchedHostname: cleanHost,
+            baseDomain,
+            levenshteinDistance: 1,
+            similarityScore: 90,
+            lookalikeSubstitution: tok,
+            description: `Visual lookalike/typosquatting detected: '${tok}' deceptive copy of '${brand.name}'.`,
+          };
+        }
+
+        // 6. Typosquatting (Levenshtein Edit Distance)
         if (tok.length >= 3 && Math.abs(tok.length - bKey.length) <= 2) {
           const distance = calculateLevenshteinDistance(tok, bKey);
 
-          // Typosquatting condition:
-          // - Distance is 1 for any brand
-          // - Distance is 2 for brands with length >= 6 (e.g. binance, paypal, netflix)
           const isTyposquatting = distance === 1 || (distance === 2 && bKey.length >= 6);
 
           if (isTyposquatting && tok !== bKey) {
@@ -433,6 +551,7 @@ export function detectBrandImpersonation(hostname: string): BrandImpersonationMa
             return {
               detected: true,
               targetedBrand: brand.name,
+              category: brand.category,
               impersonationType: 'typosquatting',
               matchedHostname: cleanHost,
               baseDomain,

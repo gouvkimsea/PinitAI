@@ -27,9 +27,18 @@ const SENSITIVE_KEYS = new Set([
   'cardnumber',
   'card_number',
   'cvv',
+  'cvc',
+  'pan',
+  'pin',
+  'otp',
+  'otpcode',
+  'otp_code',
+  'verification_code',
   'ssn',
   'privatekey',
   'private_key',
+  'billing_details',
+  'payment_token',
 ]);
 
 /**
@@ -141,13 +150,28 @@ export interface ApiRequestLogData {
   endpoint: string;
   statusCode: number;
   durationMs: number;
+  requestId?: string | null;
   ipHash?: string | null;
   userId?: string | null;
   contentLength?: number;
 }
 
+export interface DetectionEventLogData {
+  scanId: string;
+  requestId?: string | null;
+  inputType: string;
+  threatCategory: string;
+  threatLevel: string;
+  riskScore: number;
+  confidenceScore: number;
+  detectorsRan: number;
+  durationMs: number;
+  privacyMetadata?: Record<string, unknown>;
+}
+
 export interface DetectionFailureLogData {
   scanId: string;
+  requestId?: string | null;
   detectorName: string;
   error: string;
   context?: Record<string, unknown>;
@@ -155,14 +179,34 @@ export interface DetectionFailureLogData {
 
 export interface AiFailureLogData {
   scanId?: string;
+  requestId?: string | null;
   provider: string;
   error: string;
   fallbackUsed: boolean;
   durationMs?: number;
 }
 
+export interface ExternalApiFailureLogData {
+  scanId?: string;
+  requestId?: string | null;
+  provider: string;
+  endpoint?: string;
+  error: string;
+  statusCode?: number;
+  durationMs?: number;
+}
+
+export interface QueueFailureLogData {
+  scanId?: string;
+  jobId?: string;
+  queueType: 'BullMQ' | 'InMemory';
+  error: string;
+  attemptsMade?: number;
+}
+
 export interface FileProcessingFailureLogData {
   scanId?: string;
+  requestId?: string | null;
   fileName: string;
   error: string;
   stage: string;
@@ -235,6 +279,7 @@ class AppLogger {
       endpoint: data.endpoint,
       statusCode: data.statusCode,
       durationMs: data.durationMs,
+      requestId: data.requestId || null,
       isSlow,
       ipHash: data.ipHash || null,
       userId: data.userId || null,
@@ -242,22 +287,41 @@ class AppLogger {
     });
   }
 
-  // 2. Detection Failures Tracking
+  // 2. Structured Detection Telemetry
+  trackDetection(data: DetectionEventLogData): void {
+    this.winston.info(`Detection completed for scan ${data.scanId} [${data.threatLevel} / score: ${data.riskScore}]`, {
+      event_type: 'DETECTION_COMPLETED',
+      scanId: data.scanId,
+      requestId: data.requestId || null,
+      inputType: data.inputType,
+      threatCategory: data.threatCategory,
+      threatLevel: data.threatLevel,
+      riskScore: data.riskScore,
+      confidenceScore: data.confidenceScore,
+      detectorsRan: data.detectorsRan,
+      durationMs: data.durationMs,
+      privacyMetadata: data.privacyMetadata || null,
+    });
+  }
+
+  // 3. Detection Failures Tracking
   trackDetectionFailure(data: DetectionFailureLogData): void {
     this.winston.warn(`Detector '${data.detectorName}' encountered failure during execution`, {
       event_type: 'DETECTION_FAILURE',
       scanId: data.scanId,
+      requestId: data.requestId || null,
       detectorName: data.detectorName,
       error: data.error,
       context: data.context,
     });
   }
 
-  // 3. AI Failures Tracking
+  // 4. AI Failures Tracking
   trackAiFailure(data: AiFailureLogData): void {
     this.winston.warn(`AI service failure with provider '${data.provider}'. Fallback used: ${data.fallbackUsed}`, {
       event_type: 'AI_FAILURE',
       scanId: data.scanId,
+      requestId: data.requestId || null,
       provider: data.provider,
       error: data.error,
       fallbackUsed: data.fallbackUsed,
@@ -265,7 +329,33 @@ class AppLogger {
     });
   }
 
-  // 4. File-Processing Failures Tracking
+  // 5. External API Failures Tracking
+  trackExternalApiFailure(data: ExternalApiFailureLogData): void {
+    this.winston.warn(`External API failure on provider '${data.provider}'`, {
+      event_type: 'EXTERNAL_API_FAILURE',
+      scanId: data.scanId,
+      requestId: data.requestId || null,
+      provider: data.provider,
+      endpoint: data.endpoint,
+      error: data.error,
+      statusCode: data.statusCode,
+      durationMs: data.durationMs,
+    });
+  }
+
+  // 6. Queue Failures Tracking
+  trackQueueFailure(data: QueueFailureLogData): void {
+    this.winston.error(`Queue job failure in ${data.queueType}`, {
+      event_type: 'QUEUE_FAILURE',
+      scanId: data.scanId,
+      jobId: data.jobId,
+      queueType: data.queueType,
+      error: data.error,
+      attemptsMade: data.attemptsMade,
+    });
+  }
+
+  // 7. File-Processing Failures Tracking
   trackFileProcessingFailure(data: FileProcessingFailureLogData): void {
     this.winston.error(`File processing failure in stage '${data.stage}' for file '${data.fileName}'`, {
       event_type: 'FILE_PROCESSING_FAILURE',

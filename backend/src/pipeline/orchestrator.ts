@@ -12,12 +12,14 @@ import { config } from '../config';
 import { logger } from '../utils/logger';
 import { LruCache } from '../utils/lruCache';
 import { metricsCollector } from '../modules/monitoring/metricsCollector';
+import { createSafePreview, extractPrivacyMetadata } from '../utils/privacySanitizer';
 
 export class DetectionPipeline {
   private duplicateCache = new LruCache<string, PipelineFinalResult>({
     maxSize: 1000,
     defaultTtlMs: 10 * 60 * 1000, // 10 minutes cache freshness
   });
+  private inFlightScans = new Map<string, Promise<PipelineFinalResult>>();
   private redisClient: IORedis | null = null;
 
   constructor() {
@@ -44,6 +46,7 @@ export class DetectionPipeline {
 
   public clearCache(): void {
     this.duplicateCache.clear();
+    this.inFlightScans.clear();
   }
 
   async analyze(input: PipelineInput): Promise<PipelineFinalResult> {
@@ -53,6 +56,8 @@ export class DetectionPipeline {
   /**
    * Executes the full multi-layer scam detection pipeline:
    * User Input → Validation → Normalization → Multiple Detectors → Evidence Collection → Risk Engine → AI Explanation → Final Result
+   *
+   * Includes Single-Flight Request Deduplication to prevent duplicate work under high concurrency.
    */
   async execute(input: PipelineInput): Promise<PipelineFinalResult> {
     const startTime = Date.now();
@@ -64,7 +69,10 @@ export class DetectionPipeline {
       ? crypto.createHash('sha256').update(rawTarget).digest('hex')
       : null;
 
-    if (targetHash && !input.metadata?.bypassCache && !input.metadata?.noCache) {
+    const bypassCache = Boolean(input.metadata?.bypassCache || input.metadata?.noCache);
+
+    if (targetHash && !bypassCache) {
+      // 1. Check in-memory LRU cache
       let cached = this.duplicateCache.get(targetHash);
       if (!cached && this.redisClient && this.redisClient.status === 'ready') {
         try {
@@ -78,6 +86,7 @@ export class DetectionPipeline {
         }
       }
       if (cached) {
+        metricsCollector.recordCacheLookup(true);
         logger.info('Duplicate analysis cache hit — returning cached scan result', {
           scanId,
           cachedScanId: cached.scan_id,
@@ -94,19 +103,67 @@ export class DetectionPipeline {
           created_at: new Date().toISOString(),
         };
       }
+
+      // 2. Optimization 11: Single-Flight Deduplication for concurrent identical targets
+      const inFlight = this.inFlightScans.get(targetHash);
+      if (inFlight) {
+        metricsCollector.recordCacheLookup(true);
+        logger.info('Duplicate analysis attached to in-flight scan execution', {
+          scanId,
+          targetHash: targetHash.slice(0, 16),
+        });
+        const inFlightResult = await inFlight;
+        if (input.type === 'URL') {
+          metricsCollector.recordUrlAnalysis(0, true);
+        }
+        return {
+          ...inFlightResult,
+          id: scanId,
+          scan_id: scanId,
+          cached: true,
+          created_at: new Date().toISOString(),
+        };
+      }
+
+      metricsCollector.recordCacheLookup(false);
     }
 
+    const executionPromise = this.executePipelineInternal(input, targetHash, startTime, scanId);
+    if (targetHash && !bypassCache) {
+      this.inFlightScans.set(targetHash, executionPromise);
+    }
+
+    try {
+      return await executionPromise;
+    } finally {
+      if (targetHash) {
+        this.inFlightScans.delete(targetHash);
+      }
+    }
+  }
+
+  private async executePipelineInternal(
+    input: PipelineInput,
+    targetHash: string | null,
+    startTime: number,
+    scanId: string
+  ): Promise<PipelineFinalResult> {
+    const requestId = input.requestId || (input.metadata?.requestId as string) || undefined;
     const context: PipelineContext = {
       scanId,
+      requestId,
       userId: input.userId,
       startTime,
     };
 
+    const safePreview = createSafePreview(input.rawContent || input.originalFileName || '', 60);
     logger.info('Initiating multi-layer scam detection pipeline', {
       scanId,
+      requestId: requestId || null,
       type: input.type,
-      targetPreview: (input.rawContent || input.originalFileName || '').slice(0, 60),
+      targetPreview: safePreview,
     });
+
 
     // 1 & 2. Validation & Normalization Layer
     const normalized = inputNormalizer.normalize(input);
@@ -156,22 +213,37 @@ export class DetectionPipeline {
     }
 
     // 7. Map Detection Signals for DB & Response
+    const nowIso = new Date().toISOString();
     const signals: Array<{
       id: string;
       category: string;
       severity: 'low' | 'medium' | 'high';
       title: string;
       description: string;
+      source: string;
+      signal_type: string;
+      reliability: number;
+      confidence: number;
+      timestamp: string;
+      explanation: string;
     }> = [];
 
     for (const det of evidenceCollection.detectorResults) {
       if (det.score > 0) {
+        const detSev = det.severity === 'critical' ? 'high' : (det.severity as 'low' | 'medium' | 'high');
+        const explanationText = det.evidence.indicators.join('; ') || det.evidence.summary;
         signals.push({
           id: `${det.detector_name}-${signals.length + 1}`,
           category: det.detector_type,
-          severity: det.severity === 'critical' ? 'high' : (det.severity as 'low' | 'medium' | 'high'),
+          severity: detSev,
           title: `[${det.detector_name}] ${det.evidence.summary}`,
-          description: det.evidence.indicators.join('; ') || det.evidence.summary,
+          description: explanationText,
+          source: det.detector_name,
+          signal_type: det.detector_type,
+          reliability: det.detector_name.includes('file') ? 0.95 : (det.detector_name.includes('reputation') ? 0.90 : 0.80),
+          confidence: det.confidence,
+          timestamp: nowIso,
+          explanation: explanationText,
         });
       }
     }
@@ -197,13 +269,58 @@ export class DetectionPipeline {
       completedAt: new Date(),
     };
 
-    try {
-      await prisma.scan.upsert({
-        where: { id: scanId },
-        create: {
-          id: scanId,
-          ...scanData,
-          scanResult: {
+    // Optimization 9 & 10: Non-blocking asynchronous database persistence to prevent request thread blocking
+    const persistPromise = prisma.scan.upsert({
+      where: { id: scanId },
+      create: {
+        id: scanId,
+        ...scanData,
+        scanResult: {
+          create: {
+            summary: explanation.summary,
+            totalEngines: evidenceCollection.totalDetectorsRan,
+            maliciousEngines: evidenceCollection.maliciousCount,
+            suspiciousEngines: evidenceCollection.suspiciousCount,
+            cleanEngines: evidenceCollection.cleanCount,
+            safeFactors: JSON.stringify(explanation.safe_factors),
+            recommendations: JSON.stringify(explanation.recommended_actions),
+          },
+        },
+        evidenceRecord: {
+          create: {
+            summary: explanation.summary,
+            indicators: JSON.stringify(evidenceCollection.indicators),
+            evidenceBreakdown: JSON.stringify(riskResult.evidenceBreakdown),
+            technicalEvidence: JSON.stringify({
+              language_detected: normalized.detectedLanguage,
+              extracted_urls: normalized.extractedUrls,
+              extracted_contacts: normalized.extractedPhoneNumbers,
+              safe_factors: explanation.safe_factors,
+              indicators_found: evidenceCollection.indicators,
+            }),
+            uncertaintyNotes: explanation.uncertainty_notes
+              ? (typeof explanation.uncertainty_notes === 'string'
+                  ? explanation.uncertainty_notes
+                  : JSON.stringify(explanation.uncertainty_notes))
+              : null,
+            groundedScore: riskResult.confidenceScore,
+          },
+        },
+        detections: {
+          create: signals.map((s) => ({
+            engine: s.title.split(']')[0].replace('[', '') || 'MultiLayerPipeline',
+            category: s.category,
+            severity: s.severity,
+            ruleId: s.id,
+            title: s.title,
+            description: s.description,
+          })),
+        },
+      },
+      update: {
+        ...scanData,
+        scanResult: {
+          upsert: {
             create: {
               summary: explanation.summary,
               totalEngines: evidenceCollection.totalDetectorsRan,
@@ -213,8 +330,19 @@ export class DetectionPipeline {
               safeFactors: JSON.stringify(explanation.safe_factors),
               recommendations: JSON.stringify(explanation.recommended_actions),
             },
+            update: {
+              summary: explanation.summary,
+              totalEngines: evidenceCollection.totalDetectorsRan,
+              maliciousEngines: evidenceCollection.maliciousCount,
+              suspiciousEngines: evidenceCollection.suspiciousCount,
+              cleanEngines: evidenceCollection.cleanCount,
+              safeFactors: JSON.stringify(explanation.safe_factors),
+              recommendations: JSON.stringify(explanation.recommended_actions),
+            },
           },
-          evidenceRecord: {
+        },
+        evidenceRecord: {
+          upsert: {
             create: {
               summary: explanation.summary,
               indicators: JSON.stringify(evidenceCollection.indicators),
@@ -233,97 +361,44 @@ export class DetectionPipeline {
                 : null,
               groundedScore: riskResult.confidenceScore,
             },
-          },
-          detections: {
-            create: signals.map((s) => ({
-              engine: s.title.split(']')[0].replace('[', '') || 'MultiLayerPipeline',
-              category: s.category,
-              severity: s.severity,
-              ruleId: s.id,
-              title: s.title,
-              description: s.description,
-            })),
-          },
-        },
-        update: {
-          ...scanData,
-          scanResult: {
-            upsert: {
-              create: {
-                summary: explanation.summary,
-                totalEngines: evidenceCollection.totalDetectorsRan,
-                maliciousEngines: evidenceCollection.maliciousCount,
-                suspiciousEngines: evidenceCollection.suspiciousCount,
-                cleanEngines: evidenceCollection.cleanCount,
-                safeFactors: JSON.stringify(explanation.safe_factors),
-                recommendations: JSON.stringify(explanation.recommended_actions),
-              },
-              update: {
-                summary: explanation.summary,
-                totalEngines: evidenceCollection.totalDetectorsRan,
-                maliciousEngines: evidenceCollection.maliciousCount,
-                suspiciousEngines: evidenceCollection.suspiciousCount,
-                cleanEngines: evidenceCollection.cleanCount,
-                safeFactors: JSON.stringify(explanation.safe_factors),
-                recommendations: JSON.stringify(explanation.recommended_actions),
-              },
+            update: {
+              summary: explanation.summary,
+              indicators: JSON.stringify(evidenceCollection.indicators),
+              evidenceBreakdown: JSON.stringify(riskResult.evidenceBreakdown),
+              technicalEvidence: JSON.stringify({
+                language_detected: normalized.detectedLanguage,
+                extracted_urls: normalized.extractedUrls,
+                extracted_contacts: normalized.extractedPhoneNumbers,
+                safe_factors: explanation.safe_factors,
+                indicators_found: evidenceCollection.indicators,
+              }),
+              uncertaintyNotes: explanation.uncertainty_notes
+                ? (typeof explanation.uncertainty_notes === 'string'
+                    ? explanation.uncertainty_notes
+                    : JSON.stringify(explanation.uncertainty_notes))
+                : null,
+              groundedScore: riskResult.confidenceScore,
             },
           },
-          evidenceRecord: {
-            upsert: {
-              create: {
-                summary: explanation.summary,
-                indicators: JSON.stringify(evidenceCollection.indicators),
-                evidenceBreakdown: JSON.stringify(riskResult.evidenceBreakdown),
-                technicalEvidence: JSON.stringify({
-                  language_detected: normalized.detectedLanguage,
-                  extracted_urls: normalized.extractedUrls,
-                  extracted_contacts: normalized.extractedPhoneNumbers,
-                  safe_factors: explanation.safe_factors,
-                  indicators_found: evidenceCollection.indicators,
-                }),
-                uncertaintyNotes: explanation.uncertainty_notes
-                  ? (typeof explanation.uncertainty_notes === 'string'
-                      ? explanation.uncertainty_notes
-                      : JSON.stringify(explanation.uncertainty_notes))
-                  : null,
-                groundedScore: riskResult.confidenceScore,
-              },
-              update: {
-                summary: explanation.summary,
-                indicators: JSON.stringify(evidenceCollection.indicators),
-                evidenceBreakdown: JSON.stringify(riskResult.evidenceBreakdown),
-                technicalEvidence: JSON.stringify({
-                  language_detected: normalized.detectedLanguage,
-                  extracted_urls: normalized.extractedUrls,
-                  extracted_contacts: normalized.extractedPhoneNumbers,
-                  safe_factors: explanation.safe_factors,
-                  indicators_found: evidenceCollection.indicators,
-                }),
-                uncertaintyNotes: explanation.uncertainty_notes
-                  ? (typeof explanation.uncertainty_notes === 'string'
-                      ? explanation.uncertainty_notes
-                      : JSON.stringify(explanation.uncertainty_notes))
-                  : null,
-                groundedScore: riskResult.confidenceScore,
-              },
-            },
-          },
-          detections: {
-            deleteMany: {},
-            create: signals.map((s) => ({
-              engine: s.title.split(']')[0].replace('[', '') || 'MultiLayerPipeline',
-              category: s.category,
-              severity: s.severity,
-              ruleId: s.id,
-              title: s.title,
-              description: s.description,
-            })),
-          },
         },
-      });
-    } catch (dbErr) {
+        detections: {
+          deleteMany: {},
+          create: signals.map((s) => ({
+            engine: s.title.split(']')[0].replace('[', '') || 'MultiLayerPipeline',
+            category: s.category,
+            severity: s.severity,
+            ruleId: s.id,
+            title: s.title,
+            description: s.description,
+          })),
+        },
+      },
+    }).catch((dbErr) => {
       logger.warn('Failed to persist pipeline result to database', { error: (dbErr as Error).message });
+    });
+
+    if (process.env.NODE_ENV === 'test' || input.metadata?.syncDb) {
+      await persistPromise;
     }
 
     logger.info('Pipeline execution successfully completed', {
@@ -378,6 +453,9 @@ export class DetectionPipeline {
       detector_results: evidenceCollection.detectorResults,
       detectors_evaluated: evidenceCollection.detectorResults.map((d) => d.detector_name),
       signals,
+      evidence_signals: riskResult.signals,
+      de_correlated_signals: riskResult.de_correlated_signals,
+      assessment_state: riskResult.state,
       recommended_actions: explanation.recommended_actions,
       safe_factors: explanation.safe_factors,
       technical_evidence: {
@@ -390,6 +468,10 @@ export class DetectionPipeline {
       created_at: new Date().toISOString(),
     };
 
+    if (requestId) {
+      finalResult.request_id = requestId;
+    }
+
     if (targetHash) {
       this.duplicateCache.set(targetHash, finalResult);
       if (this.redisClient && this.redisClient.status === 'ready') {
@@ -400,6 +482,28 @@ export class DetectionPipeline {
     if (input.type === 'URL') {
       metricsCollector.recordUrlAnalysis(Date.now() - startTime, false);
     }
+
+    // Record production observability metrics
+    metricsCollector.recordScan({
+      inputType: input.type,
+      threatCategory: primaryCategory,
+      threatLevel: riskResult.threatLevel,
+      confidenceScore: riskResult.confidenceScore,
+    });
+
+    const privacyMeta = extractPrivacyMetadata(input.rawContent || input.originalFileName || '');
+    logger.trackDetection({
+      scanId,
+      requestId: requestId || null,
+      inputType: input.type,
+      threatCategory: primaryCategory,
+      threatLevel: riskResult.threatLevel,
+      riskScore: riskResult.riskScore,
+      confidenceScore: riskResult.confidenceScore,
+      detectorsRan: evidenceCollection.totalDetectorsRan,
+      durationMs: Date.now() - startTime,
+      privacyMetadata: privacyMeta as any,
+    });
 
     return finalResult;
   }

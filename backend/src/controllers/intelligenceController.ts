@@ -6,6 +6,14 @@ import {
   SUPPORTED_SCAM_CATEGORIES,
   PatternSeverity,
   PatternStatus,
+  ruleRegistry,
+  ruleTester,
+  ruleLogger,
+  feedbackTracker,
+  scamIntelligenceEngine,
+  normalizeCategory,
+  ALL_RULE_CATEGORIES,
+  CATEGORY_DISPLAY_NAMES,
 } from '../modules/intelligence';
 import { logger } from '../utils/logger';
 import { sendErrorResponse } from '../utils/responseFormatter';
@@ -35,16 +43,35 @@ const CompareContentSchema = z.object({
   max_matches: z.number().int().min(1).max(100).optional(),
 });
 
+const ToggleRuleSchema = z.object({
+  enabled: z.boolean(),
+});
+
+const FeedbackSchema = z.object({
+  rule_id: z.string().min(1, 'Rule ID is required.'),
+  sample_content: z.string().min(1, 'Sample content is required.').max(50000),
+  reason: z.string().max(1000).optional(),
+  reported_by: z.string().max(200).optional(),
+});
+
+const EvaluateContentSchema = z.object({
+  text: z.string().min(1, 'Text content is required.').max(50000),
+  url: z.string().optional(),
+  qr: z.string().optional(),
+});
+
 export class IntelligenceController {
   /**
    * GET /api/intelligence/categories
-   * List all officially supported scam intelligence categories.
+   * List all officially supported scam intelligence categories (both legacy and 20 modular categories).
    */
   async getCategories(_req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       res.status(200).json({
         success: true,
         supported_categories: SUPPORTED_SCAM_CATEGORIES,
+        modular_categories: ALL_RULE_CATEGORIES,
+        category_metadata: CATEGORY_DISPLAY_NAMES,
       });
     } catch (err) {
       next(err);
@@ -113,7 +140,6 @@ export class IntelligenceController {
   /**
    * POST /api/intelligence/patterns
    * Create and register a new scam pattern in the database.
-   * Immediately updates detection cache without application code modification.
    */
   async createPattern(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
@@ -147,7 +173,6 @@ export class IntelligenceController {
   /**
    * PUT /api/intelligence/patterns/:id
    * Update an existing scam intelligence pattern.
-   * Hot-reloads memory cache instantly.
    */
   async updatePattern(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
@@ -241,6 +266,258 @@ export class IntelligenceController {
         success: true,
         message: `Catalog seed completed. ${result.count} patterns inserted/updated.`,
         data: result,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  // =========================================================================
+  // Modular Rule System Endpoints
+  // =========================================================================
+
+  /**
+   * GET /api/intelligence/rules
+   * Query modular detection rules with filtering.
+   */
+  async listRules(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const categoryParam = req.query.category as string | undefined;
+      const severityParam = req.query.severity as PatternSeverity | undefined;
+      const enabledOnly = req.query.enabled_only === 'true';
+      const search = req.query.search as string | undefined;
+
+      const category = categoryParam ? normalizeCategory(categoryParam) || undefined : undefined;
+
+      const rules = ruleRegistry.getAllRules({
+        category,
+        severity: severityParam,
+        enabledOnly,
+        search,
+      });
+
+      const stats = ruleRegistry.getRuleStats();
+
+      res.status(200).json({
+        success: true,
+        total: rules.length,
+        stats,
+        data: rules.map((r) => ({
+          id: r.id,
+          category: r.category,
+          category_display: CATEGORY_DISPLAY_NAMES[r.category],
+          description: r.description,
+          severity: r.severity,
+          version: r.version,
+          enabled: r.enabled,
+          confidence_contribution: r.confidenceContribution,
+          tags: r.tags,
+          test_cases_count: r.testCases?.length || 0,
+        })),
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  /**
+   * GET /api/intelligence/rules/:id
+   * Get modular rule details, version history, and metrics.
+   */
+  async getRuleById(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const id = req.params.id as string;
+      const rule = ruleRegistry.getRule(id);
+
+      if (!rule) {
+        sendErrorResponse(res, 404, 'RULE_NOT_FOUND', `Modular rule [${id}] not found.`, req);
+        return;
+      }
+
+      const versionHistory = ruleRegistry.getVersionHistory(id);
+      const metrics = feedbackTracker.getRuleMetrics(id);
+
+      res.status(200).json({
+        success: true,
+        data: {
+          id: rule.id,
+          category: rule.category,
+          category_display: CATEGORY_DISPLAY_NAMES[rule.category],
+          description: rule.description,
+          severity: rule.severity,
+          version: rule.version,
+          enabled: rule.enabled,
+          confidence_contribution: rule.confidenceContribution,
+          tags: rule.tags,
+          test_cases: rule.testCases,
+          version_history: versionHistory,
+          metrics,
+        },
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  /**
+   * POST /api/intelligence/rules/:id/toggle
+   * Enable or disable a rule at runtime without code restart.
+   */
+  async toggleRule(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const id = req.params.id as string;
+      const parsed = ToggleRuleSchema.parse(req.body);
+
+      const success = ruleRegistry.setRuleEnabled(id, parsed.enabled);
+      if (!success) {
+        sendErrorResponse(res, 404, 'RULE_NOT_FOUND', `Modular rule [${id}] not found to toggle.`, req);
+        return;
+      }
+
+      res.status(200).json({
+        success: true,
+        message: `Rule [${id}] ${parsed.enabled ? 'enabled' : 'disabled'} successfully.`,
+        data: { id, enabled: parsed.enabled },
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  /**
+   * POST /api/intelligence/rules/:id/test
+   * Execute self-testing fixtures for a specific rule.
+   */
+  async testRule(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const id = req.params.id as string;
+      const report = await ruleTester.testRuleById(id);
+
+      if (!report) {
+        sendErrorResponse(res, 404, 'RULE_NOT_FOUND', `Modular rule [${id}] not found to test.`, req);
+        return;
+      }
+
+      res.status(200).json({
+        success: true,
+        data: report,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  /**
+   * POST /api/intelligence/rules/test-all
+   * Execute self-testing suites across all registered rules.
+   */
+  async testAllRules(_req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const report = await ruleTester.testAllRegisteredRules();
+      res.status(200).json({
+        success: true,
+        data: report,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  /**
+   * GET /api/intelligence/metrics
+   * Performance metrics across all rules and evaluation telemetry.
+   */
+  async getMetrics(_req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const metrics = feedbackTracker.getAllRuleMetrics();
+      const recentLogs = ruleLogger.getRecentLogs(20);
+
+      const totalEvals = metrics.reduce((acc, m) => acc + m.evaluationsCount, 0);
+      const totalMatches = metrics.reduce((acc, m) => acc + m.matchCount, 0);
+      const totalFps = metrics.reduce((acc, m) => acc + m.falsePositivesCount, 0);
+      const totalFns = metrics.reduce((acc, m) => acc + m.falseNegativesCount, 0);
+
+      res.status(200).json({
+        success: true,
+        summary: {
+          total_evaluations: totalEvals,
+          total_matches: totalMatches,
+          total_false_positives: totalFps,
+          total_false_negatives: totalFns,
+          overall_precision: totalMatches > 0 ? Math.round(((totalMatches - totalFps) / totalMatches) * 1000) / 10 : 100,
+        },
+        rule_metrics: metrics,
+        recent_evaluation_logs: recentLogs,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  /**
+   * POST /api/intelligence/feedback/false-positive
+   * Record a false positive report.
+   */
+  async reportFalsePositive(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const parsed = FeedbackSchema.parse(req.body);
+      const record = feedbackTracker.recordFalsePositive(
+        parsed.rule_id,
+        parsed.sample_content,
+        parsed.reason,
+        parsed.reported_by || req.user?.id
+      );
+
+      res.status(201).json({
+        success: true,
+        message: `False positive recorded for rule [${parsed.rule_id}].`,
+        data: record,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  /**
+   * POST /api/intelligence/feedback/false-negative
+   * Record a false negative report.
+   */
+  async reportFalseNegative(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const parsed = FeedbackSchema.parse(req.body);
+      const record = feedbackTracker.recordFalseNegative(
+        parsed.rule_id,
+        parsed.sample_content,
+        parsed.reason,
+        parsed.reported_by || req.user?.id
+      );
+
+      res.status(201).json({
+        success: true,
+        message: `False negative recorded for rule [${parsed.rule_id}].`,
+        data: record,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  /**
+   * POST /api/intelligence/evaluate
+   * Evaluate content using multi-signal modular rules, strictly enforcing the Anti-Unilateral Principle.
+   */
+  async evaluateModular(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const parsed = EvaluateContentSchema.parse(req.body);
+      const verdict = await scamIntelligenceEngine.evaluate({
+        text: parsed.text,
+        url: parsed.url,
+        qr: parsed.qr,
+      });
+
+      res.status(200).json({
+        success: true,
+        data: verdict,
       });
     } catch (err) {
       next(err);

@@ -4,6 +4,9 @@ import { logger } from '../../utils/logger';
 import { config } from '../../config';
 import prisma from '../../database/client';
 import { LruCache } from '../../utils/lruCache';
+import { httpsAgent } from '../../utils/httpConnectionPool';
+import { virusTotalCircuitBreaker } from '../../modules/ai/circuitBreaker';
+import { metricsCollector } from '../../modules/monitoring/metricsCollector';
 
 export interface ThreatIntelResult {
   provider: string;
@@ -26,7 +29,7 @@ export interface IThreatIntelProvider {
 }
 
 /**
- * VirusTotal API v3 Provider
+ * VirusTotal API v3 Provider with Connection Pooling, Circuit Breaker, and Metrics
  */
 export class VirusTotalProvider implements IThreatIntelProvider {
   name = 'VirusTotal';
@@ -44,11 +47,23 @@ export class VirusTotalProvider implements IThreatIntelProvider {
   async lookupHash(sha256: string): Promise<ThreatIntelResult | null> {
     if (!this.isAvailable()) return null;
 
+    // Fast-fail if circuit breaker is OPEN
+    if (virusTotalCircuitBreaker.isOpen()) {
+      logger.debug('VirusTotal circuit breaker is OPEN — bypassing hash lookup', { sha256 });
+      return null;
+    }
+
+    const startTime = Date.now();
     try {
       const response = await axios.get(`https://www.virustotal.com/api/v3/files/${sha256}`, {
+        httpsAgent,
         headers: { 'x-apikey': this.apiKey },
         timeout: this.requestTimeoutMs,
       });
+
+      const duration = Date.now() - startTime;
+      virusTotalCircuitBreaker.recordSuccess();
+      metricsCollector.recordExternalApiCall(duration, true);
 
       const stats = response.data?.data?.attributes?.last_analysis_stats || {};
       const malicious = stats.malicious || 0;
@@ -80,6 +95,15 @@ export class VirusTotalProvider implements IThreatIntelProvider {
         raw: response.data?.data?.attributes,
       };
     } catch (err) {
+      const duration = Date.now() - startTime;
+      virusTotalCircuitBreaker.recordFailure((err as Error).message);
+      metricsCollector.recordExternalApiCall(duration, false);
+      logger.trackExternalApiFailure({
+        provider: this.name,
+        endpoint: 'https://www.virustotal.com/api/v3/files',
+        error: (err as Error).message,
+        durationMs: duration,
+      });
       logger.debug('VirusTotal hash lookup failed or not found', { sha256, error: (err as Error).message });
       return null;
     }
@@ -88,11 +112,23 @@ export class VirusTotalProvider implements IThreatIntelProvider {
   async lookupDomain(domain: string): Promise<ThreatIntelResult | null> {
     if (!this.isAvailable()) return null;
 
+    // Fast-fail if circuit breaker is OPEN
+    if (virusTotalCircuitBreaker.isOpen()) {
+      logger.debug('VirusTotal circuit breaker is OPEN — bypassing domain lookup', { domain });
+      return null;
+    }
+
+    const startTime = Date.now();
     try {
       const response = await axios.get(`https://www.virustotal.com/api/v3/domains/${domain}`, {
+        httpsAgent,
         headers: { 'x-apikey': this.apiKey },
         timeout: this.requestTimeoutMs,
       });
+
+      const duration = Date.now() - startTime;
+      virusTotalCircuitBreaker.recordSuccess();
+      metricsCollector.recordExternalApiCall(duration, true);
 
       const stats = response.data?.data?.attributes?.last_analysis_stats || {};
       const malicious = stats.malicious || 0;
@@ -123,6 +159,15 @@ export class VirusTotalProvider implements IThreatIntelProvider {
         raw: response.data?.data?.attributes,
       };
     } catch (err) {
+      const duration = Date.now() - startTime;
+      virusTotalCircuitBreaker.recordFailure((err as Error).message);
+      metricsCollector.recordExternalApiCall(duration, false);
+      logger.trackExternalApiFailure({
+        provider: this.name,
+        endpoint: 'https://www.virustotal.com/api/v3/domains',
+        error: (err as Error).message,
+        durationMs: duration,
+      });
       logger.debug('VirusTotal domain lookup failed', { domain, error: (err as Error).message });
       return null;
     }
@@ -131,13 +176,24 @@ export class VirusTotalProvider implements IThreatIntelProvider {
   async lookupUrl(rawUrl: string): Promise<ThreatIntelResult | null> {
     if (!this.isAvailable()) return null;
 
+    if (virusTotalCircuitBreaker.isOpen()) {
+      logger.debug('VirusTotal circuit breaker is OPEN — bypassing URL lookup');
+      return null;
+    }
+
+    const startTime = Date.now();
     try {
       // VirusTotal URL ID is base64 without padding
       const urlId = Buffer.from(rawUrl).toString('base64').replace(/=/g, '');
       const response = await axios.get(`https://www.virustotal.com/api/v3/urls/${urlId}`, {
+        httpsAgent,
         headers: { 'x-apikey': this.apiKey },
         timeout: this.requestTimeoutMs,
       });
+
+      const duration = Date.now() - startTime;
+      virusTotalCircuitBreaker.recordSuccess();
+      metricsCollector.recordExternalApiCall(duration, true);
 
       const stats = response.data?.data?.attributes?.last_analysis_stats || {};
       const malicious = stats.malicious || 0;
@@ -166,6 +222,15 @@ export class VirusTotalProvider implements IThreatIntelProvider {
         detections,
       };
     } catch (err) {
+      const duration = Date.now() - startTime;
+      virusTotalCircuitBreaker.recordFailure((err as Error).message);
+      metricsCollector.recordExternalApiCall(duration, false);
+      logger.trackExternalApiFailure({
+        provider: this.name,
+        endpoint: 'https://www.virustotal.com/api/v3/urls',
+        error: (err as Error).message,
+        durationMs: duration,
+      });
       logger.debug('VirusTotal URL lookup failed', { error: (err as Error).message });
       return null;
     }
@@ -281,10 +346,11 @@ export class ThreatIntelManager {
     // 1. Check in-memory LRU cache (fastest, 0ms)
     const memCached = this.hashMemoryCache.get(normalizedHash);
     if (memCached !== undefined) {
+      metricsCollector.recordCacheLookup(true);
       return memCached;
     }
 
-    // 2. Check local DB cache (TTL 24 hours)
+    // 2. Check local DB cache (TTL 24 hours) with selective column projection
     try {
       const cached = await prisma.threatIntelligence.findFirst({
         where: {
@@ -292,45 +358,75 @@ export class ThreatIntelManager {
           targetValue: normalizedHash,
           expiresAt: { gt: new Date() },
         },
+        select: {
+          threatCategory: true,
+          rawData: true,
+        },
       });
 
       if (cached && cached.rawData) {
+        if (cached.threatCategory === 'CLEAN') {
+          this.hashMemoryCache.set(normalizedHash, null);
+          metricsCollector.recordCacheLookup(true);
+          return null;
+        }
         const parsed = JSON.parse(cached.rawData) as ThreatIntelResult;
         this.hashMemoryCache.set(normalizedHash, parsed);
+        metricsCollector.recordCacheLookup(true);
         return parsed;
       }
     } catch (e) {
       logger.debug('DB Cache query skipped', { error: (e as Error).message });
     }
 
-    // 3. Query active providers
-    for (const provider of this.providers) {
-      if (provider.isAvailable()) {
-        const result = await provider.lookupHash(normalizedHash);
-        if (result && result.isMalicious) {
-          this.hashMemoryCache.set(normalizedHash, result);
-          // Cache in DB
-          try {
-            await prisma.threatIntelligence.create({
-              data: {
-                targetType: 'HASH',
-                targetValue: normalizedHash,
-                provider: provider.name,
-                reputationScore: result.reputationScore,
-                threatCategory: result.threatCategory,
-                rawData: JSON.stringify(result),
-                expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
-              },
-            });
-          } catch {
-            // Ignore cache write collision
-          }
-          return result;
-        }
+    metricsCollector.recordCacheLookup(false);
+
+    // 3. Optimization 1: Query active providers concurrently
+    const activeProviders = this.providers.filter((p) => p.isAvailable());
+    const lookupPromises = activeProviders.map(async (provider) => {
+      try {
+        const res = await provider.lookupHash(normalizedHash);
+        return { provider, result: res };
+      } catch {
+        return { provider, result: null };
+      }
+    });
+
+    const settled = await Promise.all(lookupPromises);
+
+    for (const { provider, result } of settled) {
+      if (result && result.isMalicious) {
+        this.hashMemoryCache.set(normalizedHash, result);
+        // Persist to DB cache asynchronously without blocking response
+        prisma.threatIntelligence.create({
+          data: {
+            targetType: 'HASH',
+            targetValue: normalizedHash,
+            provider: provider.name,
+            reputationScore: result.reputationScore,
+            threatCategory: result.threatCategory,
+            rawData: JSON.stringify(result),
+            expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+          },
+        }).catch(() => {});
+        return result;
       }
     }
 
+    // Optimization 2: Cache safe-to-cache reputation results (negative cache TTL: 2 hours in DB, 10 mins in memory)
     this.hashMemoryCache.set(normalizedHash, null);
+    prisma.threatIntelligence.create({
+      data: {
+        targetType: 'HASH',
+        targetValue: normalizedHash,
+        provider: 'SystemReputationEvaluator',
+        reputationScore: 0,
+        threatCategory: 'CLEAN',
+        rawData: JSON.stringify({ isClean: true }),
+        expiresAt: new Date(Date.now() + 2 * 60 * 60 * 1000), // 2 hours safe negative cache
+      },
+    }).catch(() => {});
+
     return null;
   }
 
@@ -340,10 +436,11 @@ export class ThreatIntelManager {
     // 1. Check in-memory LRU cache (fastest, 0ms)
     const memCached = this.domainMemoryCache.get(normalizedDomain);
     if (memCached !== undefined) {
+      metricsCollector.recordCacheLookup(true);
       return memCached;
     }
 
-    // 2. Check persistent DB cache (TTL 24 hours) — survives process restarts
+    // 2. Check persistent DB cache (TTL 24 hours for malicious, 2 hours for verified clean) with selective column projection
     try {
       const dbCached = await prisma.threatIntelligence.findFirst({
         where: {
@@ -351,47 +448,78 @@ export class ThreatIntelManager {
           targetValue: normalizedDomain,
           expiresAt: { gt: new Date() },
         },
+        select: {
+          threatCategory: true,
+          rawData: true,
+        },
       });
       if (dbCached && dbCached.rawData) {
+        if (dbCached.threatCategory === 'CLEAN') {
+          this.domainMemoryCache.set(normalizedDomain, null);
+          metricsCollector.recordCacheLookup(true);
+          return null;
+        }
         const parsed = JSON.parse(dbCached.rawData) as ThreatIntelResult;
         this.domainMemoryCache.set(normalizedDomain, parsed);
+        metricsCollector.recordCacheLookup(true);
         return parsed;
       }
     } catch (e) {
       logger.debug('Domain DB cache query skipped', { error: (e as Error).message });
     }
 
-    // 3. Query active providers
-    for (const provider of this.providers) {
-      if (provider.isAvailable()) {
-        const result = await provider.lookupDomain(normalizedDomain);
-        if (result && result.isMalicious) {
-          this.domainMemoryCache.set(normalizedDomain, result);
-          // Persist positive (malicious) results to DB cache
-          try {
-            await prisma.threatIntelligence.create({
-              data: {
-                targetType: 'DOMAIN',
-                targetValue: normalizedDomain,
-                provider: provider.name,
-                reputationScore: result.reputationScore,
-                threatCategory: result.threatCategory,
-                rawData: JSON.stringify(result),
-                expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
-              },
-            });
-          } catch {
-            // Ignore cache write collision
-          }
-          return result;
-        }
+    metricsCollector.recordCacheLookup(false);
+
+    // 3. Optimization 1: Query active providers concurrently
+    const activeProviders = this.providers.filter((p) => p.isAvailable());
+    const lookupPromises = activeProviders.map(async (provider) => {
+      try {
+        const res = await provider.lookupDomain(normalizedDomain);
+        return { provider, result: res };
+      } catch {
+        return { provider, result: null };
+      }
+    });
+
+    const settled = await Promise.all(lookupPromises);
+
+    for (const { provider, result } of settled) {
+      if (result && result.isMalicious) {
+        this.domainMemoryCache.set(normalizedDomain, result);
+        // Persist positive (malicious) results to DB cache asynchronously
+        prisma.threatIntelligence.create({
+          data: {
+            targetType: 'DOMAIN',
+            targetValue: normalizedDomain,
+            provider: provider.name,
+            reputationScore: result.reputationScore,
+            threatCategory: result.threatCategory,
+            rawData: JSON.stringify(result),
+            expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+          },
+        }).catch(() => {});
+        return result;
       }
     }
 
+    // Optimization 2: Cache safe-to-cache reputation results (negative cache TTL: 2 hours in DB, 10 mins in memory)
     this.domainMemoryCache.set(normalizedDomain, null);
+    prisma.threatIntelligence.create({
+      data: {
+        targetType: 'DOMAIN',
+        targetValue: normalizedDomain,
+        provider: 'SystemReputationEvaluator',
+        reputationScore: 0,
+        threatCategory: 'CLEAN',
+        rawData: JSON.stringify({ isClean: true }),
+        expiresAt: new Date(Date.now() + 2 * 60 * 60 * 1000), // 2 hours safe negative cache
+      },
+    }).catch(() => {});
+
     return null;
   }
 }
 
 export const threatIntel = new ThreatIntelManager();
+
 

@@ -1,10 +1,16 @@
 import { IDetector, InputType, NormalizedInput, PipelineContext, DetectorResult, DetectorSeverity } from '../types';
 import prisma from '../../database/client';
+import { LruCache } from '../../utils/lruCache';
+import { metricsCollector } from '../../modules/monitoring/metricsCollector';
 
 export class CommunityReportDetector implements IDetector {
   readonly name = 'community_intelligence_detector';
   readonly type = 'community' as const;
   readonly enabled = true;
+  private reportCache = new LruCache<string, Array<{ id: string; scamType: string; description: string }>>({
+    maxSize: 1000,
+    defaultTtlMs: 5 * 60 * 1000, // 5 minutes TTL
+  });
 
   supports(_type: InputType): boolean {
     return true; // Checks community reports across all modalities
@@ -20,20 +26,34 @@ export class CommunityReportDetector implements IDetector {
     if (input.extractedPhoneNumbers.length > 0) targetsToCheck.push(...input.extractedPhoneNumbers);
     if (input.sanitizedFileName) targetsToCheck.push(input.sanitizedFileName);
 
-    let matchingReports: any[] = [];
+    let matchingReports: Array<{ id: string; scamType: string; description: string }> = [];
 
     if (targetsToCheck.length > 0) {
-      try {
-        matchingReports = await prisma.scamReport.findMany({
-          where: {
-            OR: targetsToCheck.map((t) => ({
-              target: { contains: t },
-            })),
-          },
-          take: 10,
-        });
-      } catch {
-        // Fallback gracefully
+      const cacheKey = targetsToCheck.sort().join('|');
+      const cached = this.reportCache.get(cacheKey);
+      if (cached) {
+        metricsCollector.recordCacheLookup(true);
+        matchingReports = cached;
+      } else {
+        metricsCollector.recordCacheLookup(false);
+        try {
+          matchingReports = await prisma.scamReport.findMany({
+            where: {
+              OR: targetsToCheck.map((t) => ({
+                target: { contains: t },
+              })),
+            },
+            select: {
+              id: true,
+              scamType: true,
+              description: true,
+            },
+            take: 10,
+          });
+          this.reportCache.set(cacheKey, matchingReports);
+        } catch {
+          // Fallback gracefully
+        }
       }
     }
 

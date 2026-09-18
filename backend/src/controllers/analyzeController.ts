@@ -19,6 +19,7 @@ import { secureFileAnalyzer } from '../modules/file';
 import { explanationEngine } from '../modules/ai';
 import { sendAnalysisResponse, sendErrorResponse } from '../utils/responseFormatter';
 import { getRequestId } from '../middleware/requestId';
+import { messageScamEngine } from '../modules/message';
 
 export class AnalyzeController {
   /**
@@ -194,6 +195,58 @@ export class AnalyzeController {
   }
 
   /**
+   * POST /api/analyze/message (alias: /api/message/analyze, /api/v1/message/analyze)
+   * Dedicated Message Scam Detection Engine Endpoint:
+   * Returns structured JSON with riskLevel, riskScore, confidence, scamCategories,
+   * indicators, extractedEntities, recommendedAction, explanation, and evidence array.
+   */
+  async analyzeMessage(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const validated = TextScanSchema.parse(req.body);
+      const content = (validated.content || validated.text)!;
+
+      // 1. Run through detectionPipeline to leverage multi-layer deduplication & caching
+      const pipelineResult = await detectionPipeline.execute({
+        type: 'TEXT',
+        rawContent: content,
+        userId: req.user?.id || null,
+        metadata: {
+          bypassCache: req.query.no_cache === 'true' || req.query.bypass_cache === 'true',
+        },
+      });
+
+      // 2. Run dedicated message scam detection engine
+      const messageResult = messageScamEngine.analyze(content);
+
+      // 3. Return user's exact structured JSON contract + backward compatibility aliases
+      res.status(200).json({
+        success: true,
+        riskLevel: messageResult.riskLevel,
+        riskScore: messageResult.riskScore,
+        confidence: messageResult.confidence,
+        scamCategories: messageResult.scamCategories,
+        indicators: messageResult.indicators,
+        extractedEntities: messageResult.extractedEntities,
+        recommendedAction: messageResult.recommendedAction,
+        explanation: messageResult.explanation,
+        evidence: messageResult.evidence,
+        behavioralPatterns: messageResult.behavioralPatterns,
+        intent: messageResult.intent,
+        socialEngineering: messageResult.socialEngineering,
+        language: messageResult.language,
+        executionTimeMs: messageResult.executionTimeMs,
+
+        // Backward compatibility properties for performance & legacy tests
+        risk_score: messageResult.riskScore,
+        classification: pipelineResult.classification || messageResult.riskLevel,
+        cached: Boolean(pipelineResult.cached),
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  /**
    * POST /api/analyze/text (alias: /api/analyze/message, /api/v1/analyze/message)
    * Pipeline: User Input → Validation → Normalization → Multiple Detectors → Evidence Collection → Risk Engine → AI Explanation → Final Result
    */
@@ -247,10 +300,18 @@ export class AnalyzeController {
         userId: req.user?.id || null,
       });
 
+      const messageResult = messageScamEngine.analyze(content);
+
       sendAnalysisResponse(
         res,
         {
           ...result,
+          riskLevel: messageResult.riskLevel,
+          riskScore: messageResult.riskScore,
+          confidence: messageResult.confidence,
+          scamCategories: messageResult.scamCategories,
+          extractedEntities: messageResult.extractedEntities,
+          messageEvidence: messageResult.evidence,
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           mode: 'text',
           input_snippet: content.length > 80 ? `${content.slice(0, 80)}...` : content,

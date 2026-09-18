@@ -1,5 +1,6 @@
 import { IDetector, NormalizedInput, PipelineContext, DetectorResult, EvidenceCollection, DetectorSeverity } from '../types';
 import { logger } from '../../utils/logger';
+import { metricsCollector } from '../../modules/monitoring/metricsCollector';
 
 export class EvidenceCollector {
   private readonly defaultTimeoutMs: number;
@@ -21,8 +22,10 @@ export class EvidenceCollector {
         let timer: ReturnType<typeof setTimeout> | undefined;
         const timeoutPromise = new Promise<null>((resolve) => {
           timer = setTimeout(() => {
+            metricsCollector.recordDetectionFailure();
             logger.trackDetectionFailure({
               scanId: context.scanId,
+              requestId: context.requestId,
               detectorName: detector.name,
               error: `Timed out after ${this.defaultTimeoutMs}ms`,
               context: { inputType: input.type },
@@ -38,8 +41,10 @@ export class EvidenceCollector {
           if (timer) clearTimeout(timer);
         }
       } catch (err) {
+        metricsCollector.recordDetectionFailure();
         logger.trackDetectionFailure({
           scanId: context.scanId,
+          requestId: context.requestId,
           detectorName: detector.name,
           error: (err as Error).message,
           context: { inputType: input.type },

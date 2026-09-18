@@ -11,6 +11,8 @@ import { aiProxyController } from '../controllers/aiProxyController';
 import { intelligenceController } from '../controllers/intelligenceController';
 import { feedbackController } from '../controllers/feedbackController';
 import { retentionController } from '../controllers/retentionController';
+import { aiController } from '../controllers/aiController';
+import { evaluationController } from '../controllers/evaluationController';
 import { fileUpload } from '../middleware/upload';
 import {
   secureMulterUpload,
@@ -74,8 +76,51 @@ apiRouter.post(
   textScanLimiter,
   enforceTextPayloadLimit,
   optionalAuth,
-  analyzeController.analyzeText.bind(analyzeController)
+  analyzeController.analyzeMessage.bind(analyzeController)
 );
+apiRouter.post(
+  '/message/analyze',
+  textScanLimiter,
+  enforceTextPayloadLimit,
+  optionalAuth,
+  analyzeController.analyzeMessage.bind(analyzeController)
+);
+
+/**
+ * POST /api/ai/analyze
+ * Evaluates content through the 7-layer Hybrid Scam Detection Architecture
+ * (Rule Engine + Threat Intel + URL Analysis + Message Analysis + Behavioral Signals + AI Semantic Analysis + Anti-Override Guard)
+ */
+apiRouter.post(
+  '/ai/analyze',
+  aiLimiter,
+  enforceTextPayloadLimit,
+  optionalAuth,
+  aiController.analyze.bind(aiController)
+);
+
+/**
+ * Systematic Evaluation Dataset & Quality Benchmarking Endpoints
+ */
+apiRouter.get(
+  '/evaluation/dataset',
+  standardApiLimiter,
+  optionalAuth,
+  evaluationController.getDatasetInfo.bind(evaluationController)
+);
+apiRouter.post(
+  '/evaluation/benchmark',
+  standardApiLimiter,
+  optionalAuth,
+  evaluationController.runBenchmark.bind(evaluationController)
+);
+apiRouter.get(
+  '/evaluation/metrics',
+  standardApiLimiter,
+  optionalAuth,
+  evaluationController.getLatestMetrics.bind(evaluationController)
+);
+
 
 /**
  * POST /api/analyze/url (also supports alias POST /api/urls/scan)
@@ -281,6 +326,7 @@ apiRouter.get('/statistics', systemController.getStatistics.bind(systemControlle
  */
 apiRouter.get('/models', optionalAuth, async (_req: Request, res: Response, next: NextFunction) => {
   try {
+    res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=120');
     const models = await prisma.modelVersion.findMany({
       where: { isActive: true },
       orderBy: [{ provider: 'asc' }, { name: 'asc' }],
@@ -445,5 +491,99 @@ apiRouter.post(
   requireAuth,
   requireRole('admin'),
   intelligenceController.seedCatalog.bind(intelligenceController)
+);
+
+/**
+ * GET /api/intelligence/rules
+ * List modular scam intelligence rules with filtering
+ */
+apiRouter.get(
+  '/intelligence/rules',
+  optionalAuth,
+  intelligenceController.listRules.bind(intelligenceController)
+);
+
+/**
+ * GET /api/intelligence/rules/:id
+ * Retrieve specific modular rule details, version history, and metrics
+ */
+apiRouter.get(
+  '/intelligence/rules/:id',
+  optionalAuth,
+  intelligenceController.getRuleById.bind(intelligenceController)
+);
+
+/**
+ * POST /api/intelligence/rules/:id/toggle
+ * Enable or disable a rule at runtime without code changes or restarts
+ */
+apiRouter.post(
+  '/intelligence/rules/:id/toggle',
+  requireAuth,
+  requireRole('admin'),
+  intelligenceController.toggleRule.bind(intelligenceController)
+);
+
+/**
+ * POST /api/intelligence/rules/:id/test
+ * Run automated self-testing fixtures for a specific rule
+ */
+apiRouter.post(
+  '/intelligence/rules/:id/test',
+  requireAuth,
+  requireRole('admin'),
+  intelligenceController.testRule.bind(intelligenceController)
+);
+
+/**
+ * POST /api/intelligence/rules/test-all
+ * Run test suites across all registered rules
+ */
+apiRouter.post(
+  '/intelligence/rules/test-all',
+  requireAuth,
+  requireRole('admin'),
+  intelligenceController.testAllRules.bind(intelligenceController)
+);
+
+/**
+ * GET /api/intelligence/metrics
+ * Performance metrics, evaluation count, latency, and FP/FN stats
+ */
+apiRouter.get(
+  '/intelligence/metrics',
+  optionalAuth,
+  intelligenceController.getMetrics.bind(intelligenceController)
+);
+
+/**
+ * POST /api/intelligence/feedback/false-positive
+ * Record false positive report
+ */
+apiRouter.post(
+  '/intelligence/feedback/false-positive',
+  optionalAuth,
+  intelligenceController.reportFalsePositive.bind(intelligenceController)
+);
+
+/**
+ * POST /api/intelligence/feedback/false-negative
+ * Record false negative report
+ */
+apiRouter.post(
+  '/intelligence/feedback/false-negative',
+  optionalAuth,
+  intelligenceController.reportFalseNegative.bind(intelligenceController)
+);
+
+/**
+ * POST /api/intelligence/evaluate
+ * Evaluate content against multi-signal modular rules enforcing the Anti-Unilateral Principle
+ */
+apiRouter.post(
+  '/intelligence/evaluate',
+  textScanLimiter,
+  optionalAuth,
+  intelligenceController.evaluateModular.bind(intelligenceController)
 );
 

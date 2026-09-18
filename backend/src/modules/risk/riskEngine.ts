@@ -5,6 +5,12 @@ import {
   RiskEngineConfig,
   riskConfigManager,
 } from './riskConfig';
+import {
+  EvidenceSignal,
+  RiskAssessmentState,
+  SignalCorrelationGroup,
+  SignalSeverity,
+} from './types';
 
 export interface EvidenceWeights {
   messageScore?: number;
@@ -23,6 +29,7 @@ export interface RiskCalculationResult {
   risk_score: number;
   classification: RiskClassification;
   confidence: number;
+  state: RiskAssessmentState;
   triggered_detectors: string[];
   evidence: {
     summary: string;
@@ -31,6 +38,11 @@ export interface RiskCalculationResult {
     criticalRulesTriggered: string[];
   };
   recommended_action: string;
+
+  // Signal & correlation transparency
+  signals: EvidenceSignal[];
+  de_correlated_signals: EvidenceSignal[];
+  correlation_groups: Record<string, SignalCorrelationGroup>;
 
   // Backward-compatible camelCase properties for existing services & tests
   riskScore: number;
@@ -53,45 +65,323 @@ export interface RiskCalculationResult {
 export class RiskEngine {
   private configManager = riskConfigManager;
 
-  /**
-   * Retrieves the current risk scoring configuration
-   */
   getConfig(): RiskEngineConfig {
     return this.configManager.getConfig();
   }
 
-  /**
-   * Dynamically updates risk scoring configuration (weights, thresholds, critical rules)
-   * without requiring application rewrites or restarts.
-   */
   updateConfig(updates: Partial<RiskEngineConfig>): RiskEngineConfig {
     return this.configManager.updateConfig(updates);
   }
 
-  /**
-   * Resets configuration to factory defaults
-   */
   resetConfig(): RiskEngineConfig {
     return this.configManager.resetConfig();
   }
 
   /**
-   * Evaluates an EvidenceCollection combining the 7 core detection signals:
-   * 1. Text analysis
-   * 2. URL analysis
-   * 3. Domain reputation
-   * 4. Scam patterns
-   * 5. Impersonation detection
-   * 6. File analysis
-   * 7. Community/user reports
-   * (Plus AI model contextual embeddings as an additional signal)
+   * Intrinsic reliability ratings by detector source
+   */
+  private getSourceReliability(source: string): number {
+    switch (source) {
+      case 'file_security_detector':
+        return 0.95; // High deterministic accuracy (AV hashes, magic bytes)
+      case 'reputation_signal_detector':
+        return 0.90; // Threat feeds & blocklists
+      case 'impersonation_detector':
+        return 0.85; // Curated brand dictionary & combisquatting
+      case 'scam_pattern_detector':
+        return 0.80; // Validated regex & threat intelligence
+      case 'url_security_detector':
+        return 0.80; // Structural, IP, redirect probes
+      case 'text_linguistic_detector':
+        return 0.70; // Natural language heuristics
+      case 'community_intelligence_detector':
+        return 0.75; // Crowdsourced consensus
+      case 'ai_model_detector':
+        return 0.65; // Machine learning probability
+      default:
+        return 0.60;
+    }
+  }
+
+  /**
+   * Derives a correlation group key for a signal to prevent double-counting.
+   * Multiple features sharing the same underlying origin or domain characteristic
+   * are assigned to the same correlation group.
+   */
+  private deriveCorrelationGroup(source: string, indicator: string): string {
+    const lower = indicator.toLowerCase();
+
+    // Domain & URL syntactic characteristics
+    if (
+      lower.includes('domain') ||
+      lower.includes('tld') ||
+      lower.includes('combisquatting') ||
+      lower.includes('typosquatting') ||
+      lower.includes('hostname') ||
+      lower.includes('entropy') ||
+      lower.includes('subdomain') ||
+      lower.includes('hyphen') ||
+      lower.includes('ip address') ||
+      lower.includes('redirect')
+    ) {
+      return 'url:domain_structure';
+    }
+
+    // Urgency and social engineering tone
+    if (
+      lower.includes('urgency') ||
+      lower.includes('coercive') ||
+      lower.includes('fear') ||
+      lower.includes('threat of arrest') ||
+      lower.includes('pressure')
+    ) {
+      return 'linguistic:urgency';
+    }
+
+    // Financial lure / prize / giveaway patterns
+    if (
+      lower.includes('lottery') ||
+      lower.includes('prize') ||
+      lower.includes('giveaway') ||
+      lower.includes('crypto') ||
+      lower.includes('doubling') ||
+      lower.includes('investment') ||
+      lower.includes('profit')
+    ) {
+      return 'pattern:financial_lure';
+    }
+
+    // Credential harvesting / banking authentication
+    if (
+      lower.includes('credential') ||
+      lower.includes('login') ||
+      lower.includes('account frozen') ||
+      lower.includes('verify your account') ||
+      lower.includes('otp')
+    ) {
+      return 'pattern:credential_harvesting';
+    }
+
+    // Binary / Executable payloads
+    if (
+      lower.includes('trojan') ||
+      lower.includes('malware') ||
+      lower.includes('executable') ||
+      lower.includes('magic bytes') ||
+      lower.includes('pe header')
+    ) {
+      return 'payload:binary_threat';
+    }
+
+    return `${source}:general`;
+  }
+
+  /**
+   * Extracts and standardizes EvidenceSignals containing all 7 required properties:
+   * source, signalType, severity, reliability, confidence, timestamp, explanation.
+   */
+  public extractSignals(collection: EvidenceCollection): EvidenceSignal[] {
+    const now = new Date().toISOString();
+    const signals: EvidenceSignal[] = [];
+
+    for (const res of collection.detectorResults) {
+      if (res.score <= 0 && (!res.evidence.indicators || res.evidence.indicators.length === 0)) {
+        continue;
+      }
+
+      const source = res.detector_name;
+      const reliability = this.getSourceReliability(source);
+      const detectorConfidence = Math.max(0, Math.min(100, res.confidence || 70));
+
+      if (res.evidence.indicators && res.evidence.indicators.length > 0) {
+        for (let i = 0; i < res.evidence.indicators.length; i++) {
+          const ind = res.evidence.indicators[i];
+          const correlationGroup = this.deriveCorrelationGroup(source, ind);
+          const severity: SignalSeverity =
+            res.severity === 'critical'
+              ? 'critical'
+              : res.severity === 'high'
+              ? 'high'
+              : res.severity === 'medium'
+              ? 'medium'
+              : res.severity === 'low'
+              ? 'low'
+              : 'safe';
+
+          signals.push({
+            id: `${source}-sig-${i + 1}-${Date.now().toString(36)}`,
+            source,
+            signalType: res.detector_type,
+            severity,
+            reliability,
+            confidence: detectorConfidence,
+            timestamp: now,
+            explanation: ind,
+            score: res.score,
+            correlationGroup,
+            rawDetails: res.evidence.details,
+          });
+        }
+      } else if (res.score > 0) {
+        const correlationGroup = this.deriveCorrelationGroup(source, res.evidence.summary);
+        signals.push({
+          id: `${source}-summary-${Date.now().toString(36)}`,
+          source,
+          signalType: res.detector_type,
+          severity: res.severity,
+          reliability,
+          confidence: detectorConfidence,
+          timestamp: now,
+          explanation: res.evidence.summary,
+          score: res.score,
+          correlationGroup,
+          rawDetails: res.evidence.details,
+        });
+      }
+    }
+
+    return signals;
+  }
+
+  /**
+   * De-correlates signals to prevent double-counting correlated indicators.
+   * E.g. Five URL features derived from the same domain structure are grouped,
+   * with the primary signal contributing at 100% and secondary signals dampened
+   * by the configured intraGroupDampeningFactor (default 0.25).
+   */
+  public deCorrelateSignals(signals: EvidenceSignal[]): {
+    deCorrelatedSignals: EvidenceSignal[];
+    groups: Record<string, SignalCorrelationGroup>;
+  } {
+    const config = this.configManager.getConfig();
+    const dampeningFactor = config.deCorrelation.enabled
+      ? config.deCorrelation.intraGroupDampeningFactor
+      : 1.0;
+
+    const groupMap: Record<string, EvidenceSignal[]> = {};
+    for (const sig of signals) {
+      const g = sig.correlationGroup || `${sig.source}:general`;
+      if (!groupMap[g]) groupMap[g] = [];
+      groupMap[g].push(sig);
+    }
+
+    const groups: Record<string, SignalCorrelationGroup> = {};
+    const deCorrelatedSignals: EvidenceSignal[] = [];
+
+    for (const [groupId, groupSignals] of Object.entries(groupMap)) {
+      // Sort signals in group descending by (score * reliability)
+      groupSignals.sort((a, b) => {
+        const scoreA = (a.score || 0) * a.reliability;
+        const scoreB = (b.score || 0) * b.reliability;
+        return scoreB - scoreA;
+      });
+
+      const primarySignal = groupSignals[0];
+      const remainingSignals = groupSignals.slice(1);
+
+      // Dampen remaining signals
+      let dampenedExtraScore = 0;
+      for (const rem of remainingSignals) {
+        dampenedExtraScore += (rem.score || 0) * dampeningFactor;
+      }
+
+      const effectiveScore = Math.min(100, Math.round((primarySignal.score || 0) + dampenedExtraScore));
+
+      groups[groupId] = {
+        groupId,
+        signals: groupSignals,
+        primarySignal,
+        effectiveScore,
+        dampenedScoreContribution: dampenedExtraScore,
+      };
+
+      // Add the primary signal and discounted secondary signals
+      deCorrelatedSignals.push({
+        ...primarySignal,
+        score: effectiveScore,
+      });
+    }
+
+    return { deCorrelatedSignals, groups };
+  }
+
+  /**
+   * Computes Orthogonal Confidence Score (0 to 100).
+   * Separates "How dangerous the evidence appears" from "How confident we are".
    *
-   * Enforces the anti-unilateral rule: no single detector can dictate the final score
-   * unless it triggers an explicitly configured critical security rule.
+   * Factors:
+   * - Breadth: Number of detectors evaluated out of potential detectors
+   * - Agreement: Consensus among independent detection sources
+   * - Signal Reliability: Intrinsic reliability of sources providing evidence
+   * - Ambiguity Dampening: Conflicting signals reduce confidence
+   * - Critical Rule Overrides: Verified cryptographic/hash matches provide near certainty
+   */
+  public calculateConfidence(
+    collection: EvidenceCollection,
+    signals: EvidenceSignal[],
+    hasCriticalOverride: boolean,
+    distinctDetectorsTriggered: number
+  ): number {
+    if (hasCriticalOverride) {
+      return 95;
+    }
+
+    // Base confidence starts from detector coverage
+    const detectorsRan = collection.totalDetectorsRan || 1;
+    // Coverage component: 30 to 50 based on detector count (e.g. 3 detectors = 45, 5 detectors = 50)
+    let coverageScore = Math.min(50, 30 + detectorsRan * 5);
+
+    // Corroboration component: agreement across distinct sources
+    let corroborationBonus = 0;
+    if (distinctDetectorsTriggered >= 3) {
+      corroborationBonus = 40;
+    } else if (distinctDetectorsTriggered === 2) {
+      corroborationBonus = 25;
+    } else if (distinctDetectorsTriggered === 1) {
+      corroborationBonus = 5;
+    } else if (collection.cleanCount >= 3) {
+      // Multiple detectors ran and all agree it is clean -> high confidence in safety!
+      corroborationBonus = 40;
+    }
+
+    // Reliability and individual detector confidence of active sources
+    let avgReliability = 0.70;
+    let avgDetectorConf = 75;
+    if (signals.length > 0) {
+      const sumRel = signals.reduce((acc, s) => acc + s.reliability, 0);
+      avgReliability = sumRel / signals.length;
+      const sumConf = signals.reduce((acc, s) => acc + s.confidence, 0);
+      avgDetectorConf = sumConf / signals.length;
+    } else if (detectorsRan >= 4) {
+      avgReliability = 0.85; // clean run across multiple trusted engines
+      avgDetectorConf = 85;
+    }
+
+    const reliabilityAdjustment = (avgReliability - 0.5) * 15; // -7.5 to +7.5
+    const detectorConfAdjustment = (avgDetectorConf - 70) * 0.2; // -4 to +6
+
+    let compositeConfidence = coverageScore + corroborationBonus + reliabilityAdjustment + detectorConfAdjustment;
+
+    // Sparse or uncorroborated single heuristic signal check:
+    // If only 1 detector ran or only 1 weak signal triggered with 0 corroboration,
+    // confidence must be kept low (< 40) so it triggers INSUFFICIENT_EVIDENCE when appropriate
+    if (detectorsRan <= 1 && signals.length <= 1) {
+      compositeConfidence = Math.min(35, compositeConfidence);
+    }
+
+    return Math.min(99, Math.max(25, Math.round(compositeConfidence)));
+  }
+
+  /**
+   * Evaluates an EvidenceCollection with full separation of Risk and Confidence.
    */
   evaluateEvidence(collection: EvidenceCollection): RiskCalculationResult {
     const config = this.configManager.getConfig();
     const weights = config.weights;
+
+    // 1. Extract and De-correlate Signals
+    const rawSignals = this.extractSignals(collection);
+    const { deCorrelatedSignals, groups } = this.deCorrelateSignals(rawSignals);
 
     let textScore = 0;
     let urlScore = 0;
@@ -114,10 +404,19 @@ export class RiskEngine {
     const triggeredDetectors: string[] = [];
     const criticalRulesTriggered: string[] = [];
 
-    // 1. Process individual detector findings
+    // Map de-correlated signals back to category scores
     for (const res of collection.detectorResults) {
       if (res.score > 0) {
         triggeredDetectors.push(res.detector_name);
+      }
+
+      // Check critical rules
+      if (config.criticalRules.allowCriticalOverrides) {
+        for (const rule of config.criticalRules.rules) {
+          if (res.detector_name === rule.detectorName && res.score >= rule.minScore) {
+            criticalRulesTriggered.push(rule.id);
+          }
+        }
       }
 
       switch (res.detector_type) {
@@ -154,15 +453,17 @@ export class RiskEngine {
           hasAi = true;
           break;
       }
+    }
 
-      // Check if this detector triggered an explicitly configured critical security rule
-      if (config.criticalRules.allowCriticalOverrides) {
-        for (const rule of config.criticalRules.rules) {
-          if (res.detector_name === rule.detectorName && res.score >= rule.minScore) {
-            criticalRulesTriggered.push(rule.id);
-          }
-        }
-      }
+    // Apply de-correlated dampening to category scores if multiple correlated signals exist
+    // URL & Impersonation correlation dampening check
+    const domainGroup = groups['url:domain_structure'];
+    if (domainGroup && domainGroup.signals.length > 1) {
+      urlScore = Math.min(urlScore, domainGroup.effectiveScore);
+    }
+    const urgencyGroup = groups['linguistic:urgency'];
+    if (urgencyGroup && urgencyGroup.signals.length > 1) {
+      textScore = Math.min(textScore, urgencyGroup.effectiveScore);
     }
 
     // 2. Dynamically redistribute weights across actively evaluated signal categories
@@ -187,8 +488,8 @@ export class RiskEngine {
       wAi /= totalActiveWeight;
     }
 
-    // 3. Compute base weighted score
-    let rawWeightedScore =
+    // 3. Compute base weighted risk score
+    const rawWeightedScore =
       textScore * wText +
       urlScore * wUrl +
       reputationScore * wRep +
@@ -198,8 +499,6 @@ export class RiskEngine {
       communityScore * wComm +
       aiScore * wAi;
 
-    // 4. Evaluate Critical Security Rule Overrides vs Anti-Unilateral Rule
-    // "Do not allow one detector to automatically determine the final result unless explicitly configured as a critical security rule."
     const hasCriticalOverride = criticalRulesTriggered.length > 0;
     const maxIndividualScore = Math.max(
       textScore,
@@ -212,16 +511,11 @@ export class RiskEngine {
       aiScore
     );
 
-    let finalScore = rawWeightedScore;
+    let finalRiskScore = rawWeightedScore;
 
     if (hasCriticalOverride) {
-      // Explicit critical security rule triggered: apply critical security floor
-      const criticalFloor = config.criticalRules.criticalThreshold;
-      finalScore = Math.max(finalScore, criticalFloor);
+      finalRiskScore = Math.max(finalRiskScore, config.criticalRules.criticalThreshold);
     } else {
-      // No critical security rule triggered:
-      // Single detectors CANNOT dictate the final score alone.
-      // However, if multiple independent detectors concur, apply correlation boosting.
       const triggeringDetectors = collection.detectorResults.filter(
         (r) => r.score >= config.correlationBoost.minScoreThreshold
       );
@@ -230,50 +524,60 @@ export class RiskEngine {
         config.correlationBoost.enabled &&
         triggeringDetectors.length >= config.correlationBoost.minTriggeringDetectors
       ) {
-        // Multi-detector consensus detected: boost the weighted score to reflect confirmed agreement
         const boosted = rawWeightedScore * config.correlationBoost.boostMultiplier;
-        finalScore = Math.min(100, Math.max(boosted, maxIndividualScore));
+        finalRiskScore = Math.min(100, Math.max(boosted, maxIndividualScore));
       } else {
-        // Only 1 detector triggered (or multiple below threshold):
-        // Anti-unilateral rule: strictly retain the weighted score without unilateral override!
-        finalScore = rawWeightedScore;
+        finalRiskScore = rawWeightedScore;
       }
     }
 
-    const normalizedRiskScore = Math.min(100, Math.max(0, Math.round(finalScore)));
-    const classification = this.configManager.classifyScore(normalizedRiskScore);
+    const normalizedRiskScore = Math.min(100, Math.max(0, Math.round(finalRiskScore)));
+
+    // 4. Calculate Orthogonal Confidence Score
+    const distinctTriggered = new Set(triggeredDetectors).size;
+    const confidence = this.calculateConfidence(
+      collection,
+      rawSignals,
+      hasCriticalOverride,
+      distinctTriggered
+    );
+
+    // 5. 2D Classification State
+    const assessmentState = this.configManager.classifyState(normalizedRiskScore, confidence);
+
+    // Map to RiskClassification
+    let classification: RiskClassification;
+    if (assessmentState === 'INSUFFICIENT_EVIDENCE') {
+      classification = 'Insufficient Evidence';
+    } else if (assessmentState === 'CONFIRMED_MALICIOUS') {
+      classification = 'Critical Risk';
+    } else {
+      classification = this.configManager.classifyScore(normalizedRiskScore);
+    }
 
     // Map to legacy ThreatLevel
     let threatLevel: ThreatLevel = 'SAFE';
-    switch (classification) {
-      case 'Critical Risk':
+    switch (assessmentState) {
+      case 'CONFIRMED_MALICIOUS':
         threatLevel = 'MALICIOUS';
         break;
-      case 'High Risk':
+      case 'HIGH_RISK':
         threatLevel = 'HIGH_RISK';
         break;
-      case 'Suspicious':
+      case 'SUSPICIOUS':
         threatLevel = 'SUSPICIOUS';
         break;
-      case 'Mild Risk':
-        threatLevel = 'LOW_RISK';
+      case 'INSUFFICIENT_EVIDENCE':
+        threatLevel = normalizedRiskScore >= 50 ? 'SUSPICIOUS' : 'LOW_RISK';
         break;
-      case 'Low Risk':
+      case 'SAFE_LOW_RISK':
       default:
         threatLevel = 'SAFE';
         break;
     }
 
-    // 5. Calculate Confidence Score (0–100)
-    let confidence = 50;
-    if (collection.totalDetectorsRan >= 3) confidence += 15;
-    if (collection.indicators.length > 0) confidence += 15;
-    if (triggeredDetectors.length >= 2) confidence += 15;
-    if (hasCriticalOverride) confidence = Math.max(confidence, 95);
-    confidence = Math.min(99, Math.max(40, confidence));
-
     // 6. Formulate Recommended Action & Structured Evidence
-    const recommendedAction = this.configManager.getRecommendedAction(classification);
+    const recommendedAction = this.configManager.getRecommendedAction(assessmentState);
 
     const evidenceBreakdown = {
       messageAnalysisScore: Math.round(textScore),
@@ -288,15 +592,20 @@ export class RiskEngine {
       aiScore: Math.round(aiScore),
     };
 
-    const evidenceSummary =
-      collection.indicators.length > 0
-        ? `Identified ${collection.indicators.length} threat indicators across ${triggeredDetectors.length} active detection signals.`
-        : 'No malicious or suspicious indicators detected across evaluated signals.';
+    let evidenceSummary = '';
+    if (assessmentState === 'INSUFFICIENT_EVIDENCE') {
+      evidenceSummary = `Insufficient evidence: Confidence (${confidence}%) is below minimum threshold to provide a definitive assessment. Flagged ${collection.indicators.length} uncorroborated indicators.`;
+    } else if (collection.indicators.length > 0) {
+      evidenceSummary = `Identified ${collection.indicators.length} threat indicators across ${triggeredDetectors.length} active detection signals (Confidence: ${confidence}%).`;
+    } else {
+      evidenceSummary = `Strong evidence that no significant scam indicators exist across ${collection.totalDetectorsRan} evaluated detectors (Confidence: ${confidence}%).`;
+    }
 
     return {
       risk_score: normalizedRiskScore,
       classification,
       confidence,
+      state: assessmentState,
       triggered_detectors: triggeredDetectors,
       evidence: {
         summary: evidenceSummary,
@@ -305,6 +614,9 @@ export class RiskEngine {
         criticalRulesTriggered,
       },
       recommended_action: recommendedAction,
+      signals: rawSignals,
+      de_correlated_signals: deCorrelatedSignals,
+      correlation_groups: groups,
 
       // Backward-compatible properties
       riskScore: normalizedRiskScore,
@@ -315,7 +627,7 @@ export class RiskEngine {
   }
 
   /**
-   * Calculates normalized 0-100 composite risk score using EvidenceWeights (Legacy interface)
+   * Calculates composite risk score using EvidenceWeights (Legacy interface)
    */
   calculateRisk(weightsInput: EvidenceWeights): RiskCalculationResult {
     const config = this.configManager.getConfig();
@@ -376,27 +688,6 @@ export class RiskEngine {
       commVal * wComm;
 
     const finalScore = Math.min(100, Math.max(0, Math.round(rawScore)));
-    const classification = this.configManager.classifyScore(finalScore);
-
-    let threatLevel: ThreatLevel = 'SAFE';
-    switch (classification) {
-      case 'Critical Risk':
-        threatLevel = 'MALICIOUS';
-        break;
-      case 'High Risk':
-        threatLevel = 'HIGH_RISK';
-        break;
-      case 'Suspicious':
-        threatLevel = 'SUSPICIOUS';
-        break;
-      case 'Mild Risk':
-        threatLevel = 'LOW_RISK';
-        break;
-      case 'Low Risk':
-      default:
-        threatLevel = 'SAFE';
-        break;
-    }
 
     const triggered: string[] = [];
     if (msgVal > 0) triggered.push('text_analysis');
@@ -414,7 +705,32 @@ export class RiskEngine {
     if (repVal > 0 || behVal > 0) confidence += 10;
     confidence = Math.min(99, Math.max(40, confidence));
 
-    const recommendedAction = this.configManager.getRecommendedAction(classification);
+    const state = this.configManager.classifyState(finalScore, confidence);
+    const classification = state === 'INSUFFICIENT_EVIDENCE'
+      ? 'Insufficient Evidence'
+      : (state === 'CONFIRMED_MALICIOUS' ? 'Critical Risk' : this.configManager.classifyScore(finalScore));
+
+    let threatLevel: ThreatLevel = 'SAFE';
+    switch (state) {
+      case 'CONFIRMED_MALICIOUS':
+        threatLevel = 'MALICIOUS';
+        break;
+      case 'HIGH_RISK':
+        threatLevel = 'HIGH_RISK';
+        break;
+      case 'SUSPICIOUS':
+        threatLevel = 'SUSPICIOUS';
+        break;
+      case 'INSUFFICIENT_EVIDENCE':
+        threatLevel = finalScore >= 50 ? 'SUSPICIOUS' : 'LOW_RISK';
+        break;
+      case 'SAFE_LOW_RISK':
+      default:
+        threatLevel = 'SAFE';
+        break;
+    }
+
+    const recommendedAction = this.configManager.getRecommendedAction(state);
 
     const breakdown = {
       messageAnalysisScore: Math.round(msgVal),
@@ -433,6 +749,7 @@ export class RiskEngine {
       risk_score: finalScore,
       classification,
       confidence,
+      state,
       triggered_detectors: triggered,
       evidence: {
         summary: `Computed weighted score from ${triggered.length} active signal categories.`,
@@ -441,6 +758,9 @@ export class RiskEngine {
         criticalRulesTriggered: [],
       },
       recommended_action: recommendedAction,
+      signals: [],
+      de_correlated_signals: [],
+      correlation_groups: {},
 
       riskScore: finalScore,
       threatLevel,

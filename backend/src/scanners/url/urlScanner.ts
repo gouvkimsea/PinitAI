@@ -2,6 +2,7 @@ import axios, { AxiosResponse } from 'axios';
 import { DetectionItem, UrlScanMetadata } from '../../types';
 import { validateUrlForSsrf } from './ssrfGuard';
 import { logger } from '../../utils/logger';
+import { httpAgent, httpsAgent } from '../../utils/httpConnectionPool';
 
 export interface UrlAnalysisResult {
   metadata: UrlScanMetadata;
@@ -245,8 +246,12 @@ export async function analyzeUrl(rawUrl: string): Promise<UrlAnalysisResult> {
 
     for (let hop = 0; hop < maxHops; hop++) {
       const probeResponse: AxiosResponse = await axios.get(currentUrl, {
-        timeout: 5000,
+        httpAgent,
+        httpsAgent,
+        timeout: 2500,
         maxRedirects: 0, // Stop Axios from blindly following redirects before checking SSRF
+        maxBodyLength: 512 * 1024,
+        maxContentLength: 512 * 1024,
         validateStatus: () => true,
         headers: {
           'User-Agent': 'PinIt-Security-Scanner/1.0 (+https://pinit.security/bot)',

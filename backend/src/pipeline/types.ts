@@ -8,6 +8,7 @@ export type DetectorSeverity = 'safe' | 'low' | 'medium' | 'high' | 'critical';
 
 export interface PipelineInput {
   scanId?: string;
+  requestId?: string;
   type: InputType;
   rawContent?: string;
   filePath?: string;
@@ -62,6 +63,7 @@ export interface EvidenceCollection {
 
 export interface PipelineContext {
   scanId: string;
+  requestId?: string;
   userId?: string | null;
   startTime: number;
 }
@@ -77,6 +79,7 @@ export interface IDetector {
 export interface PipelineFinalResult {
   id: string;
   scan_id: string;
+  request_id?: string;
   type: InputType;
   target: string;
   status: 'COMPLETED' | 'FAILED' | 'QUEUED' | 'PROCESSING';
@@ -113,7 +116,34 @@ export interface PipelineFinalResult {
     severity: 'low' | 'medium' | 'high';
     title: string;
     description: string;
+    source?: string;
+    signal_type?: string;
+    reliability?: number;
+    confidence?: number;
+    timestamp?: string;
+    explanation?: string;
   }>;
+  evidence_signals?: Array<{
+    id: string;
+    source: string;
+    signalType: string;
+    severity: string;
+    reliability: number;
+    confidence: number;
+    timestamp: string;
+    explanation: string;
+  }>;
+  de_correlated_signals?: Array<{
+    id: string;
+    source: string;
+    signalType: string;
+    severity: string;
+    reliability: number;
+    confidence: number;
+    timestamp: string;
+    explanation: string;
+  }>;
+  assessment_state?: string;
   recommended_actions: string[];
   safe_factors: string[];
   technical_evidence: Record<string, any>;

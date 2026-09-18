@@ -44,7 +44,16 @@ export class ScanHistoryController {
           skip,
           take: limit,
           orderBy: { createdAt: 'desc' },
-          include: {
+          select: {
+            id: true,
+            type: true,
+            target: true,
+            status: true,
+            riskLevel: true,
+            riskScore: true,
+            scanDurationMs: true,
+            createdAt: true,
+            completedAt: true,
             fileRecord: { select: { originalName: true, sizeBytes: true, mimeType: true } },
             urlScan: { select: { url: true, domain: true } },
             _count: { select: { detections: true } },

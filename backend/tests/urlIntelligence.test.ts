@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { urlIntelligence, calculateShannonEntropy, normalizeUrlString } from '../src/modules/url/urlIntelligence';
 import { detectBrandImpersonation, calculateLevenshteinDistance, extractDomainParts } from '../src/modules/url/brandDetector';
+import { urlNormalizer } from '../src/modules/url/urlNormalizer';
+import { domainAgeService } from '../src/modules/url/domainAgeService';
+import { contentAnalyzer } from '../src/modules/url/contentAnalyzer';
 
 describe('Dedicated URL Intelligence Module', () => {
   describe('URL Normalization & Component Parsing', () => {
@@ -169,6 +172,214 @@ describe('Dedicated URL Intelligence Module', () => {
 
       expect(res.networkProbe.ssrfSafe).toBe(false);
       expect(res.severity).toBe('critical');
+    });
+  });
+
+  // =========================================================================
+  // Enhanced 25 Dimensions Coverage
+  // =========================================================================
+
+  describe('Dangerous Execution Pseudo-Schemes', () => {
+    it('should immediately block javascript: pseudo-schemes with critical severity', async () => {
+      const res = await urlIntelligence.analyze('javascript:alert(document.cookie)');
+
+      expect(res.severity).toBe('critical');
+      expect(res.compositeScore).toBeGreaterThanOrEqual(90);
+      expect(res.threatCategory).toBe('MALWARE');
+      expect(res.indicators.some((i) => i.includes('Dangerous execution pseudo-scheme'))).toBe(true);
+    });
+
+    it('should immediately block data: text/html pseudo-schemes with critical severity', async () => {
+      const res = await urlIntelligence.analyze('data:text/html,<script>alert(1)</script>');
+
+      expect(res.severity).toBe('critical');
+      expect(res.compositeScore).toBeGreaterThanOrEqual(90);
+    });
+  });
+
+  describe('Obfuscated IP Formats (Dword, Hex, Octal)', () => {
+    it('should detect and normalize Dword integer IP address hosts', () => {
+      const { isIp, isObfuscated, normalizedIp } = urlNormalizer.resolveObfuscatedIp('2130706433');
+      expect(isIp).toBe(true);
+      expect(isObfuscated).toBe(true);
+      expect(normalizedIp).toBe('127.0.0.1');
+    });
+
+    it('should detect and normalize Hex IP address hosts', () => {
+      const { isIp, isObfuscated, normalizedIp } = urlNormalizer.resolveObfuscatedIp('0x7f000001');
+      expect(isIp).toBe(true);
+      expect(isObfuscated).toBe(true);
+      expect(normalizedIp).toBe('127.0.0.1');
+    });
+
+    it('should detect and normalize Dotted Octal IP address hosts', () => {
+      const { isIp, isObfuscated, normalizedIp } = urlNormalizer.resolveObfuscatedIp('0177.0000.0000.0001');
+      expect(isIp).toBe(true);
+      expect(isObfuscated).toBe(true);
+      expect(normalizedIp).toBe('127.0.0.1');
+    });
+
+    it('should flag obfuscated IP URLs during full intelligence scan', async () => {
+      const res = await urlIntelligence.analyze('http://2130706433/login', { skipNetworkProbe: true });
+      expect(res.metadata.isIpAddress).toBe(true);
+      expect(res.metadata.isObfuscatedIp).toBe(true);
+      expect(res.indicators.some((i) => i.includes('Direct IP Address Host'))).toBe(true);
+    });
+  });
+
+  describe('Visual Lookalike Domains & Character Substitutions', () => {
+    it('should detect visual lookalike substitution in paypaI.com (capital I)', () => {
+      const match = detectBrandImpersonation('paypaI.com');
+      expect(match.detected).toBe(true);
+      expect(match.targetedBrand).toBe('PayPal');
+    });
+
+    it('should detect visual lookalike substitution in arnazon.com (rn for m)', () => {
+      const match = detectBrandImpersonation('arnazon.com');
+      expect(match.detected).toBe(true);
+      expect(match.targetedBrand).toBe('Amazon');
+    });
+
+    it('should detect visual lookalike substitution in vvhatsapp.com (vv for w)', () => {
+      const match = detectBrandImpersonation('vvhatsapp.com');
+      expect(match.detected).toBe(true);
+      expect(match.targetedBrand).toBe('WhatsApp');
+    });
+  });
+
+  describe('Cambodian Institutions & Businesses Impersonation', () => {
+    it('should detect fake ABA Bank combisquatting and credential harvesting', async () => {
+      const res = await urlIntelligence.analyze('https://ababank-verify.com/login', { skipNetworkProbe: true });
+      expect(res.brandImpersonation.detected).toBe(true);
+      expect(res.brandImpersonation.targetedBrand).toBe('ABA Bank');
+      expect(res.compositeScore).toBeGreaterThanOrEqual(60);
+      expect(['high', 'critical']).toContain(res.severity);
+    });
+
+    it('should detect fake Wing Bank combisquatting on high-risk TLD', async () => {
+      const res = await urlIntelligence.analyze('https://wing-security-update.xyz/login', { skipNetworkProbe: true });
+      expect(res.brandImpersonation.detected).toBe(true);
+      expect(res.brandImpersonation.targetedBrand).toBe('Wing Bank');
+      expect(res.compositeScore).toBeGreaterThanOrEqual(60);
+    });
+
+    it('should detect fake ACLEDA Bank impersonation domain', async () => {
+      const res = await urlIntelligence.analyze('https://acledabank-online.net/auth', { skipNetworkProbe: true });
+      expect(res.brandImpersonation.detected).toBe(true);
+      expect(res.brandImpersonation.targetedBrand).toBe('ACLEDA Bank');
+    });
+
+    it('should detect fake Canadia Bank impersonation domain', async () => {
+      const res = await urlIntelligence.analyze('https://canadiabank-verify.site/signin', { skipNetworkProbe: true });
+      expect(res.brandImpersonation.detected).toBe(true);
+      expect(res.brandImpersonation.targetedBrand).toBe('Canadia Bank');
+    });
+
+    it('should detect fake General Department of Taxation (GDT) domain', async () => {
+      const res = await urlIntelligence.analyze('https://taxgov-kh-portal.online/pay', { skipNetworkProbe: true });
+      expect(res.brandImpersonation.detected).toBe(true);
+      expect(res.brandImpersonation.targetedBrand).toContain('Taxation');
+    });
+
+    it('should detect fake Cambodia Post parcel delivery scam domain', async () => {
+      const res = await urlIntelligence.analyze('https://cambodiapost-fee-tracking.com/pay', { skipNetworkProbe: true });
+      expect(res.brandImpersonation.detected).toBe(true);
+      expect(res.brandImpersonation.targetedBrand).toBe('Cambodia Post');
+    });
+  });
+
+  describe('Fake Delivery & Shipping Scams', () => {
+    it('should detect fake DHL Express package delivery phishing domain', async () => {
+      const res = await urlIntelligence.analyze('https://dhl-parcel-delivery.xyz/tracking/redelivery', { skipNetworkProbe: true });
+      expect(res.brandImpersonation.detected).toBe(true);
+      expect(res.brandImpersonation.targetedBrand).toBe('DHL Express');
+      expect(res.compositeScore).toBeGreaterThanOrEqual(60);
+    });
+
+    it('should detect fake FedEx package fee scam domain', async () => {
+      const res = await urlIntelligence.analyze('https://fedex-package-update.online/pay-fee', { skipNetworkProbe: true });
+      expect(res.brandImpersonation.detected).toBe(true);
+      expect(res.brandImpersonation.targetedBrand).toBe('FedEx');
+    });
+  });
+
+  describe('Website Content Signals (Title Brand Mismatch & Form Detection)', () => {
+    it('should flag title brand mismatch when page claims to be a brand on unauthorized host', () => {
+      const html = '<html><head><title>ABA Bank - Mobile Banking Login</title></head><body>Welcome</body></html>';
+      const signals = contentAnalyzer.analyze(html, 'evil-phishing-host.xyz');
+
+      expect(signals.evaluated).toBe(true);
+      expect(signals.titleBrandMismatch).toBe(true);
+      expect(signals.matchedBrandInTitle).toBe('ABA Bank');
+    });
+
+    it('should detect active password input form in HTML snippet', () => {
+      const html = '<form action="/steal"><input type="text" name="user"><input type="password" name="pass"></form>';
+      const signals = contentAnalyzer.analyze(html, 'fake-login.com');
+
+      expect(signals.hasPasswordInput).toBe(true);
+      expect(signals.hasLoginForm).toBe(true);
+      expect(signals.isSuspiciousLoginDrop).toBe(true);
+    });
+
+    it('should NOT flag title brand mismatch on legitimate brand domain', () => {
+      const html = '<html><head><title>ABA Bank - Personal Banking</title></head></html>';
+      const signals = contentAnalyzer.analyze(html, 'ababank.com');
+
+      expect(signals.titleBrandMismatch).toBe(false);
+    });
+  });
+
+  describe('Top Domain Whitelist Immunity (False Positive Prevention)', () => {
+    it('should assign score 0 (SAFE) to legitimate Google search query', async () => {
+      const res = await urlIntelligence.analyze('https://www.google.com/search?q=cybersecurity+training');
+      expect(res.compositeScore).toBe(0);
+      expect(res.severity).toBe('safe');
+      expect(res.metadata.isTopDomainWhitelist).toBe(true);
+    });
+
+    it('should assign score 0 (SAFE) to GitHub login path', async () => {
+      const res = await urlIntelligence.analyze('https://github.com/login');
+      expect(res.compositeScore).toBe(0);
+      expect(res.severity).toBe('safe');
+      expect(res.metadata.isTopDomainWhitelist).toBe(true);
+    });
+
+    it('should assign score 0 (SAFE) to Microsoft download portal', async () => {
+      const res = await urlIntelligence.analyze('https://www.microsoft.com/en-us/software-download/windows11');
+      expect(res.compositeScore).toBe(0);
+      expect(res.severity).toBe('safe');
+      expect(res.metadata.isTopDomainWhitelist).toBe(true);
+    });
+
+    it('should assign score 0 (SAFE) to authentic ABA Bank portal', async () => {
+      const res = await urlIntelligence.analyze('https://www.ababank.com/personal-banking/');
+      expect(res.compositeScore).toBe(0);
+      expect(res.severity).toBe('safe');
+      expect(res.metadata.isTopDomainWhitelist).toBe(true);
+    });
+  });
+
+  describe('Domain Age & Anti-Unilateral Principle', () => {
+    it('should NOT declare a newly registered domain malicious solely due to age', async () => {
+      domainAgeService.setMockDomainAge('brand-new-site.com', 5, 'GoDaddy');
+      const res = await urlIntelligence.analyze('https://brand-new-site.com/about-us', { skipNetworkProbe: true });
+
+      // Anti-unilateral rule: newly registered domain alone cannot trigger high or critical risk
+      expect(res.domainAge?.isNewDomain).toBe(true);
+      expect(res.compositeScore).toBeLessThanOrEqual(30);
+      expect(res.severity).not.toBe('critical');
+      expect(res.severity).not.toBe('high');
+    });
+
+    it('should escalate to high risk when newly registered domain combines with brand impersonation', async () => {
+      domainAgeService.setMockDomainAge('paypal-instant-verify.com', 3, 'Namecheap');
+      const res = await urlIntelligence.analyze('https://paypal-instant-verify.com/login', { skipNetworkProbe: true });
+
+      expect(res.domainAge?.isNewDomain).toBe(true);
+      expect(res.brandImpersonation.detected).toBe(true);
+      expect(res.compositeScore).toBeGreaterThanOrEqual(60);
+      expect(['high', 'critical']).toContain(res.severity);
     });
   });
 

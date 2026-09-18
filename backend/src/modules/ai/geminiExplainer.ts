@@ -11,6 +11,7 @@ import {
   ExplanationUncertainty,
 } from './types';
 import { textNormalizer } from '../../pipeline/normalization/textNormalizer';
+import { geminiCircuitBreaker } from './circuitBreaker';
 
 
 /** Structured evidence brief — the ONLY data sent to the LLM. Raw user content is never included. */
@@ -187,11 +188,20 @@ Generate the JSON explanation now. Remember: if signal_count is ${brief.signal_c
     const cached = this.cache.get(cacheKey);
     if (cached) {
       metricsCollector.recordAiCall(0, true);
+      metricsCollector.recordCacheLookup(true);
       logger.debug('Gemini AI explanation served from in-memory LRU cache', {
         signalCount: brief.signal_count,
         riskScore: brief.risk_score,
       });
       return cached;
+    }
+
+    metricsCollector.recordCacheLookup(false);
+
+    // Fast-fail if Gemini circuit breaker is OPEN
+    if (geminiCircuitBreaker.isOpen()) {
+      logger.debug('Gemini LLM circuit breaker is OPEN — bypassing LLM explanation, using rules engine fallback');
+      return null;
     }
 
     const systemPrompt = this.buildSystemPrompt();
@@ -233,6 +243,7 @@ Generate the JSON explanation now. Remember: if signal_count is ${brief.signal_c
 
       if (!response.ok) {
         const errText = await response.text().catch(() => 'unknown error');
+        geminiCircuitBreaker.recordFailure(`HTTP ${response.status}`);
         metricsCollector.recordAiCall(Date.now() - startTime, false, true);
         logger.trackAiFailure({
           scanId: ctx.scanId,
@@ -285,6 +296,7 @@ Generate the JSON explanation now. Remember: if signal_count is ${brief.signal_c
       }
 
       const duration = Date.now() - startTime;
+      geminiCircuitBreaker.recordSuccess();
       metricsCollector.recordAiCall(duration, false);
 
       logger.info('Gemini AI explanation generated successfully', {
@@ -311,6 +323,7 @@ Generate the JSON explanation now. Remember: if signal_count is ${brief.signal_c
       return explanationResult;
     } catch (err) {
       const isTimeout = (err as Error).name === 'AbortError';
+      geminiCircuitBreaker.recordFailure((err as Error).message);
       metricsCollector.recordAiCall(Date.now() - startTime, false, true);
       logger.trackAiFailure({
         scanId: ctx.scanId,

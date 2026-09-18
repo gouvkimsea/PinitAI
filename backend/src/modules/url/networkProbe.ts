@@ -1,18 +1,14 @@
-import http from 'http';
-import https from 'https';
 import axios, { AxiosResponse } from 'axios';
 import { validateUrlForSsrf } from '../../scanners/url/ssrfGuard';
-import { NetworkProbeResult } from './types';
+import { NetworkProbeResult, TlsInfo } from './types';
 import { logger } from '../../utils/logger';
 import { LruCache } from '../../utils/lruCache';
+import { contentAnalyzer } from './contentAnalyzer';
+import { httpAgent, httpsAgent } from '../../utils/httpConnectionPool';
 
 const MAX_REDIRECT_HOPS = 5;
 const PROBE_TIMEOUT_MS = 2500;
 const MAX_TOTAL_PROBE_TIMEOUT_MS = 6000;
-
-// High-performance HTTP Keep-Alive connection pooling
-const httpAgent = new http.Agent({ keepAlive: true, maxSockets: 50, timeout: 5000 });
-const httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 50, timeout: 5000 });
 
 export const probeCache = new LruCache<string, NetworkProbeResult>({
   maxSize: 1000,
@@ -20,9 +16,55 @@ export const probeCache = new LruCache<string, NetworkProbeResult>({
 });
 
 /**
+ * Extracts TLS certificate details from an active HTTPS socket if available.
+ */
+function extractTlsDetails(res: AxiosResponse): TlsInfo | undefined {
+  const isHttps = res.config.url?.startsWith('https:') ?? false;
+  if (!isHttps) {
+    return { isHttps: false };
+  }
+
+  try {
+    const socket = res.request?.res?.socket || res.request?.socket;
+    if (socket && typeof socket.getPeerCertificate === 'function') {
+      const cert = socket.getPeerCertificate(true);
+      if (cert && Object.keys(cert).length > 0) {
+        const issuer = cert.issuer?.O || cert.issuer?.CN || (typeof cert.issuer === 'string' ? cert.issuer : undefined);
+        const validFrom = cert.valid_from;
+        const validTo = cert.valid_to;
+        const isSelfSigned = Boolean(
+          cert.issuer &&
+          cert.subject &&
+          cert.issuer.CN === cert.subject.CN &&
+          (cert.issuer.O === cert.subject.O || !cert.issuer.O)
+        );
+        const isExpired = validTo ? new Date(validTo).getTime() < Date.now() : false;
+        const daysUntilExpiration = validTo
+          ? Math.floor((new Date(validTo).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+          : undefined;
+
+        return {
+          isHttps: true,
+          protocol: socket.getProtocol ? socket.getProtocol() : 'TLS',
+          issuer,
+          validFrom,
+          validTo,
+          isSelfSigned,
+          isExpired,
+          daysUntilExpiration,
+        };
+      }
+    }
+    return { isHttps: true };
+  } catch {
+    return { isHttps: true };
+  }
+}
+
+/**
  * Performs safe, isolated network probing of a URL.
  * Enforces pre-flight SSRF checks on every hop, records redirect chains,
- * detects cross-domain redirects, and limits redirect depth.
+ * detects cross-domain redirects, extracts TLS certificates, and inspects page content.
  */
 export async function probeUrlSafely(targetUrl: string): Promise<NetworkProbeResult> {
   const cached = probeCache.get(targetUrl);
@@ -36,6 +78,8 @@ export async function probeUrlSafely(targetUrl: string): Promise<NetworkProbeRes
   let hasRedirects = false;
   let redirectCount = 0;
   let resolvedIp: string | undefined;
+  let bodySnippet: string | undefined;
+  let tlsInfo: TlsInfo | undefined;
   const startTime = Date.now();
 
   try {
@@ -92,7 +136,10 @@ export async function probeUrlSafely(targetUrl: string): Promise<NetworkProbeRes
           httpsAgent,
           timeout: PROBE_TIMEOUT_MS,
           maxRedirects: 0, // Never allow Axios to follow redirects automatically without SSRF checks
+          maxBodyLength: 512 * 1024, // 512 KB response body ceiling to prevent DoS/memory exhaustion
+          maxContentLength: 512 * 1024,
           validateStatus: () => true, // Accept any HTTP status code
+          transformResponse: [(data) => data], // Keep raw string without automatic JSON parse
           headers: {
             'User-Agent': 'PinIt-Security-Scanner/1.0 (+https://pinit.security/bot)',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -120,6 +167,7 @@ export async function probeUrlSafely(targetUrl: string): Promise<NetworkProbeRes
       }
 
       finalStatusCode = response.status;
+      tlsInfo = extractTlsDetails(response);
 
       // Check for redirect response (301, 302, 303, 307, 308)
       if ([301, 302, 303, 307, 308].includes(response.status) && response.headers.location) {
@@ -165,13 +213,28 @@ export async function probeUrlSafely(targetUrl: string): Promise<NetworkProbeRes
 
         currentUrl = redirectTarget;
       } else {
-        // Terminal HTTP response reached
+        // Terminal HTTP response reached - validate Content-Type and capture body snippet
+        const contentType = String(response.headers['content-type'] || '').toLowerCase();
+        const isHtmlOrText =
+          contentType.includes('text/html') ||
+          contentType.includes('text/plain') ||
+          contentType.includes('application/xhtml+xml') ||
+          !contentType; // some minimal servers omit content-type
+
+        if (isHtmlOrText && typeof response.data === 'string') {
+          bodySnippet = response.data.slice(0, 32768);
+        }
         break;
       }
     }
 
     const finalHost = extractHost(currentUrl);
     const crossDomain = checkCrossDomain(initialDomain, currentUrl);
+
+    // Run content analysis on HTML body snippet if captured
+    const contentSignals = bodySnippet
+      ? contentAnalyzer.analyze(bodySnippet, finalHost)
+      : undefined;
 
     const finalResult: NetworkProbeResult = {
       probed: true,
@@ -185,6 +248,9 @@ export async function probeUrlSafely(targetUrl: string): Promise<NetworkProbeRes
       ssrfSafe: true,
       resolvedIp,
       latencyMs: Date.now() - startTime,
+      bodySnippet,
+      tlsInfo,
+      contentSignals,
     };
 
     probeCache.set(targetUrl, finalResult);

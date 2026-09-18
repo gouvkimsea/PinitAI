@@ -89,3 +89,28 @@ export const aiCircuitBreaker = new CircuitBreaker({
   failureThreshold: 5,
   cooldownMs: 30000,
 });
+
+export const virusTotalCircuitBreaker = new CircuitBreaker({
+  name: 'virustotal-api',
+  failureThreshold: 3,
+  cooldownMs: 30000,
+});
+
+export const rdapCircuitBreaker = new CircuitBreaker({
+  name: 'rdap-whois-api',
+  failureThreshold: 3,
+  cooldownMs: 30000,
+});
+
+export const geminiCircuitBreaker = new CircuitBreaker({
+  name: 'gemini-llm-api',
+  failureThreshold: 4,
+  cooldownMs: 30000,
+});
+
+export const clamAvCircuitBreaker = new CircuitBreaker({
+  name: 'clamav-daemon',
+  failureThreshold: 3,
+  cooldownMs: 30000,
+});
+
